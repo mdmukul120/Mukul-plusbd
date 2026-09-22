@@ -33,15 +33,19 @@ import com.example.data.repository.AuthRepository
 import com.example.data.repository.MediaRepository
 import com.example.data.util.AppLanguage
 import com.example.data.util.LanguageManager
+import com.example.data.util.ThemeManager
+import com.example.data.util.ThemeMode
 import com.example.ui.components.MukulPlusLogo
 import com.example.ui.screens.*
 import com.example.ui.theme.*
+import androidx.compose.ui.draw.scale
 import kotlinx.coroutines.launch
 
 enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
     MOVIES("মুভিজ", Icons.Default.Movie),
     LIVE_TV("লাইভ টিভি", Icons.Default.Tv),
+    MUKUL_OTT("Mukul OTT", Icons.Default.Public),
     EXTRACTOR("ডাউনলোড", Icons.Default.CloudDownload),
     PROFILE("প্রোফাইল", Icons.Default.Person)
 }
@@ -50,6 +54,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LanguageManager.init(applicationContext)
+        ThemeManager.init(applicationContext)
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
@@ -224,6 +229,17 @@ fun MukulPlusApp() {
                     )
 
                     NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Public, contentDescription = null, tint = if (currentTab == ScreenTab.MUKUL_OTT) BrandRed else TextSecondary) },
+                        label = { Text("মুকুল ওটিটি (Mukul OTT Web)") },
+                        selected = currentTab == ScreenTab.MUKUL_OTT,
+                        onClick = {
+                            currentTab = ScreenTab.MUKUL_OTT
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = if (currentTab == ScreenTab.EXTRACTOR) BrandRed else TextSecondary) },
                         label = { Text("ডাউনলোড (Mukul Movies)") },
                         selected = currentTab == ScreenTab.EXTRACTOR,
@@ -231,6 +247,38 @@ fun MukulPlusApp() {
                             currentTab = ScreenTab.EXTRACTOR
                             coroutineScope.launch { drawerState.close() }
                         },
+                        colors = drawerItemColors()
+                    )
+
+                    val currentThemeMode by ThemeManager.themeMode.collectAsState()
+                    NavigationDrawerItem(
+                        icon = {
+                            Icon(
+                                imageVector = if (currentThemeMode == ThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                contentDescription = null,
+                                tint = if (currentThemeMode == ThemeMode.DARK) Color(0xFFFFB020) else BrandRed
+                            )
+                        },
+                        label = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(if (currentThemeMode == ThemeMode.DARK) "ডার্ক মোড (Dark)" else "লাইট মোড (Light)")
+                                Switch(
+                                    checked = currentThemeMode == ThemeMode.DARK,
+                                    onCheckedChange = { ThemeManager.toggleTheme(context) },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = BrandRed
+                                    ),
+                                    modifier = Modifier.scale(0.8f)
+                                )
+                            }
+                        },
+                        selected = false,
+                        onClick = { ThemeManager.toggleTheme(context) },
                         colors = drawerItemColors()
                     )
 
@@ -292,7 +340,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (currentTab != ScreenTab.EXTRACTOR) {
+                if (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.MUKUL_OTT) {
                     TopAppBar(
                         title = {
                             MukulPlusLogo(iconSize = 30, textSize = 18)
@@ -303,6 +351,17 @@ fun MukulPlusApp() {
                             }
                         },
                         actions = {
+                            // Dark/Light Theme Toggle Action
+                            val topBarThemeMode by ThemeManager.themeMode.collectAsState()
+                            IconButton(onClick = { ThemeManager.toggleTheme(context) }) {
+                                Icon(
+                                    imageVector = if (topBarThemeMode == ThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = "Toggle Dark/Light Mode",
+                                    tint = if (topBarThemeMode == ThemeMode.DARK) Color(0xFFFFB020) else TextPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
                             // Profile Avatar
                             IconButton(onClick = { currentTab = ScreenTab.PROFILE }) {
                                 Surface(
@@ -334,14 +393,17 @@ fun MukulPlusApp() {
                                 Icon(
                                     imageVector = tab.icon,
                                     contentDescription = tab.title,
-                                    tint = if (isSelected) BrandRed else TextMuted
+                                    tint = if (isSelected) BrandRed else TextMuted,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             },
                             label = {
                                 Text(
                                     text = tab.title,
                                     color = if (isSelected) BrandRed else TextMuted,
-                                    fontSize = 10.sp,
+                                    fontSize = 9.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 )
                             },
@@ -384,6 +446,9 @@ fun MukulPlusApp() {
                             mediaRepository = mediaRepository,
                             initialChannel = selectedTvChannel
                         )
+                    }
+                    ScreenTab.MUKUL_OTT -> {
+                        MukulOttScreen()
                     }
                     ScreenTab.EXTRACTOR -> {
                         ExtractorScreen()

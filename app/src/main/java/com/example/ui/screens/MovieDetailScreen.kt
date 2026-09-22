@@ -37,6 +37,7 @@ import coil.request.ImageRequest
 import com.example.data.api.ApiClient
 import com.example.data.model.*
 import com.example.data.repository.MediaRepository
+import com.example.data.util.DownloadUtils
 import com.example.ui.components.VideoPlayerView
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
@@ -976,27 +977,7 @@ fun DownloadLinkCard(
 }
 
 private fun startDownload(context: Context, url: String, fileName: String) {
-    try {
-        val request = DownloadManager.Request(Uri.parse(url)).apply {
-            setTitle(fileName)
-            setDescription("Downloading from Mukul Plus OTT...")
-            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
-            setAllowedOverMetered(true)
-            setAllowedOverRoaming(true)
-        }
-        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-        manager.enqueue(request)
-        Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! (Downloads ফোল্ডারে চেক করুন)", Toast.LENGTH_SHORT).show()
-    } catch (_: Exception) {
-        // Fallback to browser intent
-        try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-            context.startActivity(intent)
-        } catch (e: Exception) {
-            Toast.makeText(context, "ডাউনলোড লিংক ব্রাউজারে খোলা যাচ্ছে না", Toast.LENGTH_SHORT).show()
-        }
-    }
+    DownloadUtils.openDownloadInChrome(context, url)
 }
 
 private fun copyToClipboard(context: Context, text: String) {

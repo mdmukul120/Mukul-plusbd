@@ -33,8 +33,9 @@ fun MukulPlusLogo(
     modifier: Modifier = Modifier,
     iconSize: Int = 36,
     textSize: Int = 20,
-    textColor: Color = TextPrimary
+    textColor: Color = Color.Unspecified
 ) {
+    val effectiveColor = if (textColor != Color.Unspecified) textColor else TextPrimary
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -61,7 +62,7 @@ fun MukulPlusLogo(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "MUKUL",
-                color = textColor,
+                color = effectiveColor,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = textSize.sp,
                 letterSpacing = 0.5.sp

@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,6 +25,8 @@ import com.example.data.model.CtgMovie
 import com.example.data.repository.AuthRepository
 import com.example.data.repository.MediaRepository
 import com.example.data.util.LanguageManager
+import com.example.data.util.ThemeManager
+import com.example.data.util.ThemeMode
 import com.example.ui.components.MoviePosterCard
 import com.example.ui.theme.*
 
@@ -35,8 +38,10 @@ fun ProfileScreen(
     onLogout: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val currentUser by authRepository.currentUser.collectAsState()
     val favorites by mediaRepository.favorites.collectAsState()
+    val themeMode by ThemeManager.themeMode.collectAsState()
     var favoriteMovies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
     var isLoadingFavs by remember { mutableStateOf(false) }
 
@@ -136,6 +141,98 @@ fun ProfileScreen(
             }
         }
 
+        // App Theme Selector Card (Light / Dark / System)
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (themeMode == ThemeMode.DARK) Icons.Default.DarkMode else Icons.Default.LightMode,
+                            contentDescription = null,
+                            tint = BrandRed,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "অ্যাপ থিম (Theme Settings)",
+                            color = TextPrimary,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Light Option
+                        val isLight = themeMode == ThemeMode.LIGHT
+                        FilterChip(
+                            selected = isLight,
+                            onClick = { ThemeManager.setTheme(context, ThemeMode.LIGHT) },
+                            label = { Text("লাইট (Light)") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.LightMode,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (isLight) Color.White else TextPrimary
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BrandRed,
+                                selectedLabelColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // Dark Option
+                        val isDark = themeMode == ThemeMode.DARK
+                        FilterChip(
+                            selected = isDark,
+                            onClick = { ThemeManager.setTheme(context, ThemeMode.DARK) },
+                            label = { Text("ডার্ক (Dark)") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.DarkMode,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (isDark) Color.White else TextPrimary
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BrandRed,
+                                selectedLabelColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        // System Option
+                        val isSystem = themeMode == ThemeMode.SYSTEM
+                        FilterChip(
+                            selected = isSystem,
+                            onClick = { ThemeManager.setTheme(context, ThemeMode.SYSTEM) },
+                            label = { Text("সিস্টেম") },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BrandRed,
+                                selectedLabelColor = Color.White
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        }
+
         // Watchlist Section Header
         item {
             Row(
@@ -145,7 +242,7 @@ fun ProfileScreen(
             ) {
                 Text(
                     text = "আমার ওয়াচলিস্ট (${favorites.size})",
-                    color = Color.White,
+                    color = TextPrimary,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -217,7 +314,7 @@ fun ProfileScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = movie.title,
-                                color = Color.White,
+                                color = TextPrimary,
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1

@@ -6,14 +6,12 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.view.ViewGroup
 import android.webkit.*
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,13 +24,28 @@ import com.example.data.util.DownloadUtils
 import com.example.ui.theme.AuthBrandPrimary
 import com.example.ui.theme.BrandRed
 import com.example.ui.theme.CinemaBackground
+import com.example.ui.theme.CinemaBorder
 import com.example.ui.theme.CinemaSurface
+import com.example.ui.theme.TextPrimary
 
-private const val MUKUL_MOVIES_URL = "https://mukul-movies.ai.studio/"
+private const val MUKUL_OTT_URL = "https://mukul-ott.ai.studio/"
+
+/**
+ * JavaScript interface that bridges download clicks inside the WebView
+ * directly to Android Chrome downloader.
+ */
+class ChromeDownloadBridge(private val onDownloadRequested: (String) -> Unit) {
+    @JavascriptInterface
+    fun downloadInChrome(url: String?) {
+        if (!url.isNullOrBlank()) {
+            onDownloadRequested(url)
+        }
+    }
+}
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-fun ExtractorScreen(
+fun MukulOttScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -41,7 +54,7 @@ fun ExtractorScreen(
     var canGoForward by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(true) }
     var progress by remember { mutableIntStateOf(0) }
-    var currentWebUrl by remember { mutableStateOf(MUKUL_MOVIES_URL) }
+    var currentWebUrl by remember { mutableStateOf(MUKUL_OTT_URL) }
 
     // System / Hardware back button navigates inside the WebView history
     BackHandler(enabled = canGoBack) {
@@ -53,7 +66,7 @@ fun ExtractorScreen(
             .fillMaxSize()
             .background(CinemaBackground)
     ) {
-        // Embedded Fullscreen In-App Browser (No Top Header)
+        // Embedded Fullscreen In-App Browser for Mukul OTT
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -102,7 +115,7 @@ fun ExtractorScreen(
                         override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                             super.onPageStarted(view, url, favicon)
                             isLoading = true
-                            currentWebUrl = url ?: MUKUL_MOVIES_URL
+                            currentWebUrl = url ?: MUKUL_OTT_URL
                             canGoBack = view?.canGoBack() == true
                             canGoForward = view?.canGoForward() == true
                         }
@@ -110,7 +123,7 @@ fun ExtractorScreen(
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
                             isLoading = false
-                            currentWebUrl = url ?: MUKUL_MOVIES_URL
+                            currentWebUrl = url ?: MUKUL_OTT_URL
                             canGoBack = view?.canGoBack() == true
                             canGoForward = view?.canGoForward() == true
 
@@ -184,7 +197,7 @@ fun ExtractorScreen(
                         }
                     }
 
-                    loadUrl(MUKUL_MOVIES_URL)
+                    loadUrl(MUKUL_OTT_URL)
                     webViewInstance = this
                 }
             },
@@ -206,7 +219,7 @@ fun ExtractorScreen(
             )
         }
 
-        // Floating Minimal In-Page Navigation Controls (Bottom-Right Floating Mini Bar)
+        // Floating In-Page Navigation & Chrome Launcher Controls
         Surface(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
@@ -215,7 +228,7 @@ fun ExtractorScreen(
             color = CinemaSurface.copy(alpha = 0.95f),
             tonalElevation = 6.dp,
             shadowElevation = 8.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.CinemaBorder)
+            border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
         ) {
             Row(
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -229,7 +242,7 @@ fun ExtractorScreen(
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Back",
-                            tint = com.example.ui.theme.TextPrimary,
+                            tint = TextPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -242,7 +255,7 @@ fun ExtractorScreen(
                         Icon(
                             imageVector = Icons.Default.ArrowForward,
                             contentDescription = "Forward",
-                            tint = com.example.ui.theme.TextPrimary,
+                            tint = TextPrimary,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -254,7 +267,7 @@ fun ExtractorScreen(
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = "Reload",
-                        tint = com.example.ui.theme.TextPrimary,
+                        tint = TextPrimary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
