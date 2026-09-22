@@ -1,0 +1,6 @@
+{
+  "name": "Mukul plus",
+  "description": "Mukul plus - Premium OTT streaming platform with Live TV channels, movies, genres filter, and provider downloads.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

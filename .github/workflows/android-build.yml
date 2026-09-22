@@ -1,0 +1,150 @@
+name: Android Build & Auto Release
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_title:
+        description: 'রিলিজের শিরোনাম / Release Title'
+        required: false
+        default: 'Mukul plus New Update'
+      prerelease:
+        description: 'প্রি-রিলিজ হিসেবে চিহ্নিত করবেন? (Is Pre-release)'
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: 'gradle'
+
+    - name: Prepare Environment (.env)
+      run: |
+        if [ ! -f .env ]; then
+          if [ -f .env.example ]; then
+            cp .env.example .env
+            echo ".env created from .env.example"
+          else
+            touch .env
+            echo ".env created"
+          fi
+        fi
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        gradle-version: '9.3.1'
+
+    - name: Build Debug APK with Gradle
+      run: gradle assembleDebug --stacktrace
+
+    - name: Prepare Release Artifacts & App Update Metadata
+      id: prepare_release
+      run: |
+        mkdir -p release-output
+        BUILD_NUMBER="${{ github.run_number }}"
+        VERSION_TAG="v1.0.${BUILD_NUMBER}"
+        
+        # If triggered by a git tag, use that tag
+        if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+          VERSION_TAG="${{ github.ref_name }}"
+        fi
+        
+        APK_SRC="app/build/outputs/apk/debug/app-debug.apk"
+        if [ -f "$APK_SRC" ]; then
+          cp "$APK_SRC" "release-output/MukulPlus-${VERSION_TAG}.apk"
+          cp "$APK_SRC" "release-output/MukulPlus-latest.apk"
+          echo "APK copied successfully!"
+        else
+          echo "Error: APK not found at $APK_SRC"
+          exit 1
+        fi
+        
+        # Generate Checksums
+        cd release-output
+        sha256sum MukulPlus-*.apk > sha256_checksums.txt
+        cd ..
+        
+        # Generate update.json for in-app automatic update check
+        CURRENT_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        cat <<EOF > release-output/app-update.json
+        {
+          "app_name": "Mukul plus",
+          "package_name": "com.aistudio.mukulplus.otthub",
+          "version_name": "${VERSION_TAG#v}",
+          "version_code": ${BUILD_NUMBER},
+          "tag_name": "${VERSION_TAG}",
+          "apk_name": "MukulPlus-${VERSION_TAG}.apk",
+          "download_url": "https://github.com/${{ github.repository }}/releases/download/${VERSION_TAG}/MukulPlus-${VERSION_TAG}.apk",
+          "latest_download_url": "https://github.com/${{ github.repository }}/releases/latest/download/MukulPlus-latest.apk",
+          "release_url": "https://github.com/${{ github.repository }}/releases/tag/${VERSION_TAG}",
+          "published_at": "${CURRENT_DATE}",
+          "commit_sha": "${{ github.sha }}"
+        }
+        EOF
+
+        echo "version_tag=${VERSION_TAG}" >> $GITHUB_OUTPUT
+        echo "build_date=${CURRENT_DATE}" >> $GITHUB_OUTPUT
+
+    - name: Upload APK to GitHub Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: MukulPlus-APK-${{ steps.prepare_release.outputs.version_tag }}
+        path: release-output/*
+        retention-days: 30
+
+    - name: Create GitHub Release & Publish APK Update
+      uses: softprops/action-gh-release@v2
+      if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch'
+      with:
+        tag_name: ${{ steps.prepare_release.outputs.version_tag }}
+        name: ${{ inputs.release_title || format('Mukul plus {0}', steps.prepare_release.outputs.version_tag) }}
+        body: |
+          ## 🎬 Mukul plus স্বয়ংক্রিয় অ্যাপ আপডেট (${{ steps.prepare_release.outputs.version_tag }})
+
+          GitHub Actions Workflow দ্বারা স্বয়ংক্রিয়ভাবে তৈরি ও প্রকাশিত APK রিলিজ।
+
+          ### 📱 ডাউনলোড লিঙ্ক (Direct APK Downloads):
+          - ⬇️ **[MukulPlus-${{ steps.prepare_release.outputs.version_tag }}.apk](https://github.com/${{ github.repository }}/releases/download/${{ steps.prepare_release.outputs.version_tag }}/MukulPlus-${{ steps.prepare_release.outputs.version_tag }}.apk)**
+          - 🔄 **[MukulPlus-latest.apk](https://github.com/${{ github.repository }}/releases/latest/download/MukulPlus-latest.apk)**
+
+          ### 📋 সংস্করণ বিবরণ:
+          - **Package Name:** `com.aistudio.mukulplus.otthub`
+          - **Build Number:** `${{ github.run_number }}`
+          - **Commit SHA:** `${{ github.sha }}`
+          - **Release Time:** `${{ steps.prepare_release.outputs.build_date }}`
+
+          ### 🛠 ফিচারসমূহ:
+          - Live BDIX TV & Sports চ্যানেলের মসৃণ স্ট্রিমিং
+          - CtgHall মুভি লাইব্রেরি ও TMDB ট্রেইলার এবং বিস্তারিত
+          - মাল্টি-প্রোভাইডার ডাউনলোড এক্সট্র্যাক্টর
+          - ডার্ক সিনেমা থিম ও ইন-অ্যাপ পেইন্টিং টুল
+        files: |
+          release-output/MukulPlus-*.apk
+          release-output/app-update.json
+          release-output/sha256_checksums.txt
+        generate_release_notes: true
+        draft: false
+        prerelease: ${{ inputs.prerelease || false }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
