@@ -44,6 +44,7 @@ fun HomeScreen(
     onNavigateToMovies: () -> Unit,
     onNavigateToLiveTv: () -> Unit,
     onNavigateToExtractor: () -> Unit,
+    onNavigateToMusic: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -261,6 +262,80 @@ fun HomeScreen(
                         MoviePosterCard(
                             movie = movie,
                             onClick = { onSelectMovie(movie.id) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // ----------------------------------------------------
+        // 🎵 MUKUL MUSIC PROMO BANNER (হিন্দি ৯০s, টপ হিট্স ও গান)
+        // ----------------------------------------------------
+        item {
+            Spacer(modifier = Modifier.height(14.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clickable { onNavigateToMusic() },
+                shape = RoundedCornerShape(20.dp),
+                color = CinemaSurfaceVariant,
+                border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed.copy(alpha = 0.4f))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    BrandRed.copy(alpha = 0.35f),
+                                    CinemaSurface
+                                )
+                            )
+                        )
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = BrandRed,
+                            modifier = Modifier.size(50.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "মুকুল মিউজিক হাব (Music & Hits)",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "হিন্দি ৯০s, টপ হিট্স, বিন্দু স্পেশাল ও বাংলা গান শুনুন ও ডাউনলোড করুন",
+                                color = TextMuted,
+                                fontSize = 11.sp,
+                                maxLines = 2
+                            )
+                        }
+
+                        Icon(
+                            imageVector = Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = BrandRed,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }

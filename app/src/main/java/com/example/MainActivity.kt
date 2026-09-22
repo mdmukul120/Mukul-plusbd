@@ -29,12 +29,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ExtractorPost
 import com.example.data.model.TvChannel
+import com.example.data.player.MusicPlayerManager
 import com.example.data.repository.AuthRepository
 import com.example.data.repository.MediaRepository
+import com.example.data.repository.MusicRepository
 import com.example.data.util.AppLanguage
 import com.example.data.util.LanguageManager
 import com.example.data.util.ThemeManager
 import com.example.data.util.ThemeMode
+import com.example.ui.components.FullMusicPlayerDialog
+import com.example.ui.components.MiniMusicPlayer
 import com.example.ui.components.MukulPlusLogo
 import com.example.ui.screens.*
 import com.example.ui.theme.*
@@ -45,6 +49,7 @@ enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
     MOVIES("মুভিজ", Icons.Default.Movie),
     LIVE_TV("লাইভ টিভি", Icons.Default.Tv),
+    MUSIC("মিউজিক", Icons.Default.MusicNote),
     MUKUL_OTT("Mukul OTT", Icons.Default.Public),
     EXTRACTOR("ডাউনলোড", Icons.Default.CloudDownload),
     PROFILE("প্রোফাইল", Icons.Default.Person)
@@ -55,6 +60,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         LanguageManager.init(applicationContext)
         ThemeManager.init(applicationContext)
+        MusicPlayerManager.init(applicationContext)
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
@@ -73,8 +79,10 @@ fun MukulPlusApp() {
 
     val authRepository = remember { AuthRepository(context) }
     val mediaRepository = remember { MediaRepository(context) }
+    val musicRepository = remember { MusicRepository(context) }
 
     val currentUser by authRepository.currentUser.collectAsState()
+    val showFullMusicPlayer by MusicPlayerManager.showFullPlayer.collectAsState()
 
     var currentTab by remember { mutableStateOf(ScreenTab.HOME) }
     var selectedMovieId by remember { mutableStateOf<Long?>(null) }
@@ -223,6 +231,17 @@ fun MukulPlusApp() {
                         selected = currentTab == ScreenTab.LIVE_TV,
                         onClick = {
                             currentTab = ScreenTab.LIVE_TV
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.MusicNote, contentDescription = null, tint = if (currentTab == ScreenTab.MUSIC) BrandRed else TextSecondary) },
+                        label = { Text("মিউজিক প্লেয়ার (Hindi & Bangla Music)") },
+                        selected = currentTab == ScreenTab.MUSIC,
+                        onClick = {
+                            currentTab = ScreenTab.MUSIC
                             coroutineScope.launch { drawerState.close() }
                         },
                         colors = drawerItemColors()
@@ -380,37 +399,40 @@ fun MukulPlusApp() {
                 }
             },
             bottomBar = {
-                NavigationBar(
-                    containerColor = CinemaSurface,
-                    tonalElevation = 8.dp
-                ) {
-                    ScreenTab.values().forEach { tab ->
-                        val isSelected = currentTab == tab
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = { currentTab = tab },
-                            icon = {
-                                Icon(
-                                    imageVector = tab.icon,
-                                    contentDescription = tab.title,
-                                    tint = if (isSelected) BrandRed else TextMuted,
-                                    modifier = Modifier.size(20.dp)
+                Column {
+                    MiniMusicPlayer()
+                    NavigationBar(
+                        containerColor = CinemaSurface,
+                        tonalElevation = 8.dp
+                    ) {
+                        ScreenTab.values().forEach { tab ->
+                            val isSelected = currentTab == tab
+                            NavigationBarItem(
+                                selected = isSelected,
+                                onClick = { currentTab = tab },
+                                icon = {
+                                    Icon(
+                                        imageVector = tab.icon,
+                                        contentDescription = tab.title,
+                                        tint = if (isSelected) BrandRed else TextMuted,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        text = tab.title,
+                                        color = if (isSelected) BrandRed else TextMuted,
+                                        fontSize = 8.5.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    indicatorColor = BrandRed.copy(alpha = 0.15f)
                                 )
-                            },
-                            label = {
-                                Text(
-                                    text = tab.title,
-                                    color = if (isSelected) BrandRed else TextMuted,
-                                    fontSize = 9.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                indicatorColor = BrandRed.copy(alpha = 0.15f)
                             )
-                        )
+                        }
                     }
                 }
             }
@@ -432,7 +454,8 @@ fun MukulPlusApp() {
                             },
                             onNavigateToMovies = { currentTab = ScreenTab.MOVIES },
                             onNavigateToLiveTv = { currentTab = ScreenTab.LIVE_TV },
-                            onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR }
+                            onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR },
+                            onNavigateToMusic = { currentTab = ScreenTab.MUSIC }
                         )
                     }
                     ScreenTab.MOVIES -> {
@@ -446,6 +469,9 @@ fun MukulPlusApp() {
                             mediaRepository = mediaRepository,
                             initialChannel = selectedTvChannel
                         )
+                    }
+                    ScreenTab.MUSIC -> {
+                        MusicScreen(musicRepository = musicRepository)
                     }
                     ScreenTab.MUKUL_OTT -> {
                         MukulOttScreen()
@@ -468,6 +494,13 @@ fun MukulPlusApp() {
                 }
             }
         }
+    }
+
+    // Fullscreen Music Player Dialog
+    if (showFullMusicPlayer) {
+        FullMusicPlayerDialog(
+            onDismiss = { MusicPlayerManager.closeFullPlayer() }
+        )
     }
 
     // Language Selector Dialog (10 Languages)
