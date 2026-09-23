@@ -56,62 +56,76 @@ object MusicPlayerManager {
     private val _showFullPlayer = MutableStateFlow(false)
     val showFullPlayer: StateFlow<Boolean> = _showFullPlayer.asStateFlow()
 
+    private var appContext: Context? = null
+
     @OptIn(UnstableApi::class)
     fun init(context: Context) {
-        if (exoPlayer != null) return
+        appContext = context.applicationContext
+    }
 
-        val appContext = context.applicationContext
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent("MukulPlusMusic/1.0 (Android; Mobile)")
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(20000)
-            .setAllowCrossProtocolRedirects(true)
+    @OptIn(UnstableApi::class)
+    @Synchronized
+    private fun getOrInitPlayer(): ExoPlayer? {
+        if (exoPlayer != null) return exoPlayer
+        val ctx = appContext ?: return null
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(appContext)
-            .setDataSourceFactory(httpDataSourceFactory)
+        try {
+            val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+                .setUserAgent("MukulPlusMusic/1.0 (Android; Mobile)")
+                .setConnectTimeoutMs(15000)
+                .setReadTimeoutMs(20000)
+                .setAllowCrossProtocolRedirects(true)
 
-        exoPlayer = ExoPlayer.Builder(appContext)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(androidx.media3.common.C.WAKE_MODE_LOCAL)
-            .build()
-            .apply {
-                addListener(object : Player.Listener {
-                    override fun onPlaybackStateChanged(playbackState: Int) {
-                        when (playbackState) {
-                            Player.STATE_BUFFERING -> {
-                                _isBuffering.value = true
-                            }
-                            Player.STATE_READY -> {
-                                _isBuffering.value = false
-                                _durationMs.value = duration.coerceAtLeast(0L)
-                            }
-                            Player.STATE_ENDED -> {
-                                _isBuffering.value = false
-                                handleTrackEnded()
-                            }
-                            Player.STATE_IDLE -> {
-                                _isBuffering.value = false
-                            }
+            val mediaSourceFactory = DefaultMediaSourceFactory(ctx)
+                .setDataSourceFactory(httpDataSourceFactory)
+
+            val player = ExoPlayer.Builder(ctx)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .setHandleAudioBecomingNoisy(true)
+                .build()
+
+            player.addListener(object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    when (playbackState) {
+                        Player.STATE_BUFFERING -> {
+                            _isBuffering.value = true
+                        }
+                        Player.STATE_READY -> {
+                            _isBuffering.value = false
+                            _durationMs.value = player.duration.coerceAtLeast(0L)
+                        }
+                        Player.STATE_ENDED -> {
+                            _isBuffering.value = false
+                            handleTrackEnded()
+                        }
+                        Player.STATE_IDLE -> {
+                            _isBuffering.value = false
                         }
                     }
+                }
 
-                    override fun onIsPlayingChanged(playing: Boolean) {
-                        _isPlaying.value = playing
-                        if (playing) {
-                            startProgressTracking()
-                        } else {
-                            stopProgressTracking()
-                        }
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    _isPlaying.value = playing
+                    if (playing) {
+                        startProgressTracking()
+                    } else {
+                        stopProgressTracking()
                     }
+                }
 
-                    override fun onPlayerError(error: PlaybackException) {
-                        Log.e(TAG, "ExoPlayer playback error: ${error.message}", error)
-                        _isBuffering.value = false
-                        _isPlaying.value = false
-                    }
-                })
-            }
+                override fun onPlayerError(error: PlaybackException) {
+                    Log.e(TAG, "ExoPlayer playback error: ${error.message}", error)
+                    _isBuffering.value = false
+                    _isPlaying.value = false
+                }
+            })
+
+            exoPlayer = player
+            return player
+        } catch (e: Exception) {
+            Log.e(TAG, "Error initializing ExoPlayer", e)
+            return null
+        }
     }
 
     private fun startProgressTracking() {
@@ -139,7 +153,7 @@ object MusicPlayerManager {
     }
 
     fun playTrack(track: MusicTrack, newQueue: List<MusicTrack> = emptyList()) {
-        val player = exoPlayer ?: return
+        val player = getOrInitPlayer() ?: return
         val effectiveQueue = if (newQueue.isNotEmpty()) newQueue else listOf(track)
         _queue.value = effectiveQueue
 
@@ -170,7 +184,7 @@ object MusicPlayerManager {
     }
 
     fun togglePlayPause() {
-        val player = exoPlayer ?: return
+        val player = getOrInitPlayer() ?: return
         if (player.isPlaying) {
             player.pause()
         } else {
@@ -183,7 +197,7 @@ object MusicPlayerManager {
     }
 
     fun seekTo(positionMs: Long) {
-        val player = exoPlayer ?: return
+        val player = getOrInitPlayer() ?: return
         val target = positionMs.coerceIn(0L, _durationMs.value.coerceAtLeast(0L))
         player.seekTo(target)
         _positionMs.value = target

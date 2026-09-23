@@ -1,276 +1,441 @@
 package com.example.ui.screens
 
-import android.annotation.SuppressLint
-import android.content.Intent
-import android.graphics.Bitmap
-import android.net.Uri
-import android.view.ViewGroup
-import android.webkit.*
-import androidx.activity.compose.BackHandler
+import android.widget.Toast
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
-import androidx.compose.material.icons.filled.OpenInBrowser
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import com.example.data.util.DownloadUtils
-import com.example.ui.theme.AuthBrandPrimary
-import com.example.ui.theme.BrandRed
-import com.example.ui.theme.CinemaBackground
-import com.example.ui.theme.CinemaSurface
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import com.example.data.download.DownloadStatus
+import com.example.data.download.DownloadTask
+import com.example.data.download.InAppDownloader
+import com.example.ui.components.VideoPlayerView
+import com.example.ui.theme.*
 
-private const val MUKUL_MOVIES_URL = "https://mukul-movies.ai.studio/"
-
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun ExtractorScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
-    var canGoBack by remember { mutableStateOf(false) }
-    var canGoForward by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(true) }
-    var progress by remember { mutableIntStateOf(0) }
-    var currentWebUrl by remember { mutableStateOf(MUKUL_MOVIES_URL) }
 
-    // System / Hardware back button navigates inside the WebView history
-    BackHandler(enabled = canGoBack) {
-        webViewInstance?.goBack()
+    LaunchedEffect(Unit) {
+        InAppDownloader.init(context)
     }
 
-    Box(
-        modifier = modifier
-            .fillMaxSize()
-            .background(CinemaBackground)
-    ) {
-        // Embedded Fullscreen In-App Browser (No Top Header)
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { ctx ->
-                WebView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                    isVerticalScrollBarEnabled = true
-                    overScrollMode = android.view.View.OVER_SCROLL_IF_CONTENT_SCROLLS
-                    isNestedScrollingEnabled = true
+    val allTasks by InAppDownloader.tasks.collectAsState()
+    val completedDownloads by InAppDownloader.completedDownloads.collectAsState()
 
-                    settings.apply {
-                        javaScriptEnabled = true
-                        domStorageEnabled = true
-                        databaseEnabled = true
-                        useWideViewPort = true
-                        loadWithOverviewMode = true
-                        setSupportZoom(true)
-                        builtInZoomControls = true
-                        displayZoomControls = false
-                        allowFileAccess = true
-                        allowContentAccess = true
-                        mediaPlaybackRequiresUserGesture = false
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                        userAgentString = settings.userAgentString + " MukulPlusApp/1.0"
-                    }
+    val activeTasks = remember(allTasks) {
+        allTasks.values.filter {
+            it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.QUEUED
+        }
+    }
 
-                    // JavaScript Bridge to catch all client-side download clicks
-                    addJavascriptInterface(
-                        ChromeDownloadBridge { targetUrl ->
-                            post {
-                                DownloadUtils.openDownloadInChrome(ctx, targetUrl)
-                            }
+    var activePlayFilePath by remember { mutableStateOf<String?>(null) }
+    var activePlayTitle by remember { mutableStateOf<String>("") }
+
+    if (activePlayFilePath != null) {
+        // Play downloaded video offline
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            Surface(
+                color = CinemaSurface,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = {
+                            activePlayFilePath = null
                         },
-                        "AndroidDownloader"
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextPrimary)
+                    }
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "অফলাইন প্লে: $activePlayTitle",
+                        color = TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-
-                    // Native WebView Download Listener -> Open in Chrome
-                    setDownloadListener { url, _, _, _, _ ->
-                        DownloadUtils.openDownloadInChrome(ctx, url)
-                    }
-
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                            super.onPageStarted(view, url, favicon)
-                            isLoading = true
-                            currentWebUrl = url ?: MUKUL_MOVIES_URL
-                            canGoBack = view?.canGoBack() == true
-                            canGoForward = view?.canGoForward() == true
-                        }
-
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            super.onPageFinished(view, url)
-                            isLoading = false
-                            currentWebUrl = url ?: MUKUL_MOVIES_URL
-                            canGoBack = view?.canGoBack() == true
-                            canGoForward = view?.canGoForward() == true
-
-                            // Inject DOM click interceptor for download links & buttons
-                            val jsInjector = """
-                                (function() {
-                                    if (window.__mukulDownloadInterceptorAttached) return;
-                                    window.__mukulDownloadInterceptorAttached = true;
-                                    document.addEventListener('click', function(e) {
-                                        var target = e.target.closest('a, button, [role="button"]');
-                                        if (!target) return;
-                                        var href = target.getAttribute('href') || target.getAttribute('data-href') || target.getAttribute('data-url') || '';
-                                        var text = (target.innerText || target.textContent || '').toLowerCase();
-                                        var isDl = target.hasAttribute('download') ||
-                                                   text.indexOf('download') !== -1 ||
-                                                   text.indexOf('ডাউনলোড') !== -1 ||
-                                                   href.indexOf('download') !== -1 ||
-                                                   href.indexOf('dl=1') !== -1 ||
-                                                   href.indexOf('mediafire.com') !== -1 ||
-                                                   href.indexOf('drive.google.com') !== -1 ||
-                                                   href.indexOf('pixeldrain.com') !== -1 ||
-                                                   href.indexOf('mega.nz') !== -1 ||
-                                                   href.indexOf('gofile.io') !== -1 ||
-                                                   href.match(/\.(mp4|mkv|zip|apk|rar|7z|tar|gz|iso)(\?|$)/i);
-                                        if (isDl && href && href.indexOf('javascript:') !== 0) {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            if (window.AndroidDownloader && window.AndroidDownloader.downloadInChrome) {
-                                                window.AndroidDownloader.downloadInChrome(href);
-                                            } else {
-                                                window.location.href = href;
-                                            }
-                                        }
-                                    }, true);
-                                })();
-                            """.trimIndent()
-                            view?.evaluateJavascript(jsInjector, null)
-                        }
-
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView?,
-                            request: WebResourceRequest?
-                        ): Boolean {
-                            val targetUrl = request?.url?.toString() ?: return false
-
-                            // If it's a download link, route straight to Chrome browser
-                            if (DownloadUtils.isDownloadUrl(targetUrl)) {
-                                DownloadUtils.openDownloadInChrome(ctx, targetUrl)
-                                return true
-                            }
-
-                            // Handle mailto/tel/intent schemes gracefully
-                            if (!targetUrl.startsWith("http://") && !targetUrl.startsWith("https://")) {
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
-                                    ctx.startActivity(intent)
-                                } catch (_: Exception) {}
-                                return true
-                            }
-
-                            return false // Browse in-app
-                        }
-                    }
-
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                            progress = newProgress
-                            if (newProgress == 100) {
-                                isLoading = false
-                            }
-                        }
-                    }
-
-                    loadUrl(MUKUL_MOVIES_URL)
-                    webViewInstance = this
                 }
-            },
-            update = { view ->
-                webViewInstance = view
             }
-        )
 
-        // Slim top progress bar when loading
-        if (isLoading && progress < 100) {
-            LinearProgressIndicator(
-                progress = { progress / 100f },
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.dp)
-                    .align(Alignment.TopCenter),
-                color = AuthBrandPrimary,
-                trackColor = Color.Transparent
-            )
-        }
-
-        // Floating Minimal In-Page Navigation Controls (Bottom-Right Floating Mini Bar)
-        Surface(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            shape = MaterialTheme.shapes.extraLarge,
-            color = CinemaSurface.copy(alpha = 0.95f),
-            tonalElevation = 6.dp,
-            shadowElevation = 8.dp,
-            border = androidx.compose.foundation.BorderStroke(1.dp, com.example.ui.theme.CinemaBorder)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .weight(1f),
+                contentAlignment = Alignment.Center
             ) {
-                if (canGoBack) {
-                    IconButton(
-                        onClick = { webViewInstance?.goBack() },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back",
-                            tint = com.example.ui.theme.TextPrimary,
-                            modifier = Modifier.size(20.dp)
+                VideoPlayerView(
+                    videoUrl = activePlayFilePath!!,
+                    title = activePlayTitle,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    } else {
+        Column(
+            modifier = modifier
+                .fillMaxSize()
+                .background(CinemaBackground)
+        ) {
+            // Header Stats Banner
+            Surface(
+                color = CinemaSurface,
+                tonalElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "ইন-অ্যাপ মুভি ডাউনলোডার",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        val totalBytes = completedDownloads.sumOf { it.totalBytes }
+                        Text(
+                            text = "${completedDownloads.size}টি মুভি সংরক্ষিত (${InAppDownloader.formatFileSize(totalBytes)})",
+                            color = CyanAccent,
+                            fontSize = 11.sp
                         )
                     }
-                }
-                if (canGoForward) {
-                    IconButton(
-                        onClick = { webViewInstance?.goForward() },
-                        modifier = Modifier.size(36.dp)
+
+                    Surface(
+                        color = BrandRed.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowForward,
-                            contentDescription = "Forward",
-                            tint = com.example.ui.theme.TextPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.CloudDone, contentDescription = null, tint = BrandRed, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "ডিভাইস স্টোরেজ",
+                                color = BrandRedLight,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
                     }
                 }
-                IconButton(
-                    onClick = { webViewInstance?.reload() },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Reload",
-                        tint = com.example.ui.theme.TextPrimary,
-                        modifier = Modifier.size(18.dp)
+            }
+
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                // ACTIVE IN-PROGRESS DOWNLOADS SECTION
+                if (activeTasks.isNotEmpty()) {
+                    item {
+                        Text(
+                            text = "চলমান ডাউনলোডসমূহ (${activeTasks.size})",
+                            color = TextPrimary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                    }
+
+                    items(activeTasks, key = { it.id }) { task ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed.copy(alpha = 0.4f))
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    if (task.poster.isNotEmpty()) {
+                                        AsyncImage(
+                                            model = ImageRequest.Builder(context)
+                                                .data(task.poster)
+                                                .crossfade(true)
+                                                .build(),
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .size(40.dp, 56.dp)
+                                                .clip(RoundedCornerShape(4.dp))
+                                        )
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                    }
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = task.title,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "রেজুলেশন: ${task.quality} • ${task.progressPercent}%",
+                                            color = CyanAccent,
+                                            fontSize = 10.sp
+                                        )
+                                        if (task.speedText.isNotEmpty()) {
+                                            Text(
+                                                text = "স্পিড: ${task.speedText}",
+                                                color = Color(0xFF10B981),
+                                                fontSize = 9.sp
+                                            )
+                                        }
+                                    }
+
+                                    IconButton(
+                                        onClick = { InAppDownloader.cancelDownload(task.id) }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Close,
+                                            contentDescription = "Cancel",
+                                            tint = BrandRedLight,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                LinearProgressIndicator(
+                                    progress = { task.progressPercent / 100f },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(5.dp)
+                                        .clip(RoundedCornerShape(2.5.dp)),
+                                    color = BrandRed,
+                                    trackColor = CinemaBorder
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "${InAppDownloader.formatFileSize(task.downloadedBytes)} / ${InAppDownloader.formatFileSize(task.totalBytes)}",
+                                        color = TextMuted,
+                                        fontSize = 9.5.sp
+                                    )
+                                    Text(
+                                        text = "অ্যাপে সরাসরি ডাউনলোড হচ্ছে",
+                                        color = TextMuted,
+                                        fontSize = 9.5.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // COMPLETED DOWNLOADS SECTION
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "ডিভাইসে সংরক্ষিত ভিডিও ও মুভি তালিকা",
+                        color = TextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(vertical = 4.dp)
                     )
                 }
-                IconButton(
-                    onClick = {
-                        val activeUrl = webViewInstance?.url ?: currentWebUrl
-                        DownloadUtils.openDownloadInChrome(context, activeUrl)
-                    },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.OpenInBrowser,
-                        contentDescription = "Open in Chrome",
-                        tint = BrandRed,
-                        modifier = Modifier.size(20.dp)
-                    )
+
+                if (completedDownloads.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = CinemaSurfaceVariant,
+                                    modifier = Modifier.size(52.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.FileDownloadOff,
+                                            contentDescription = null,
+                                            tint = TextMuted,
+                                            modifier = Modifier.size(26.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = "ডিভাইসে কোনো ডাউনলোড করা ভিডিও নেই",
+                                    color = TextPrimary,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "ইউটিউব বা ওটিটি থেকে যেকোনো ভিডিও/মুভি ডাউনলোড বাটনে ক্লিক করলে তা সরাসরি অ্যাপের ভেতরে জমা হবে এবং অফলাইনে চালানো যাবে।",
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    items(completedDownloads, key = { it.id }) { task ->
+                        val isYouTube = task.movieSlug.startsWith("yt_")
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (task.poster.isNotEmpty()) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(task.poster)
+                                            .crossfade(true)
+                                            .build(),
+                                        contentDescription = null,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier
+                                            .size(50.dp, 70.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                }
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(
+                                            color = if (isYouTube) BrandRed.copy(alpha = 0.2f) else CyanAccent.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = if (isYouTube) "ইউটিউব" else "ওটিটি",
+                                                color = if (isYouTube) BrandRedLight else CyanAccent,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = task.title,
+                                            color = TextPrimary,
+                                            fontSize = 12.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${task.quality} • ${InAppDownloader.formatFileSize(task.totalBytes)}",
+                                        color = CyanAccent,
+                                        fontSize = 11.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "ডিভাইসে সংরক্ষিত • অফলাইন প্লে",
+                                        color = Color(0xFF10B981),
+                                        fontSize = 10.sp
+                                    )
+                                }
+
+                                // Play Button
+                                FilledTonalButton(
+                                    onClick = {
+                                        activePlayFilePath = task.filePath
+                                        activePlayTitle = task.title
+                                    },
+                                    colors = ButtonDefaults.filledTonalButtonColors(
+                                        containerColor = BrandRed,
+                                        contentColor = Color.White
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Text("প্লে", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
+                                // Delete Button
+                                IconButton(
+                                    onClick = {
+                                        InAppDownloader.deleteDownloadedMovie(context, task.id)
+                                        Toast.makeText(context, "মুভি মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = TextMuted,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

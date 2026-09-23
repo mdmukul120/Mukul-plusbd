@@ -47,10 +47,11 @@ import kotlinx.coroutines.launch
 
 enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
-    MOVIES("মুভিজ", Icons.Default.Movie),
-    LIVE_TV("লাইভ টিভি", Icons.Default.Tv),
+    MOVIES("মুভি", Icons.Default.Movie),
+    LIVE_TV("টিভি", Icons.Default.Tv),
     MUSIC("মিউজিক", Icons.Default.MusicNote),
-    MUKUL_OTT("Mukul OTT", Icons.Default.Public),
+    YOUTUBE("ইউটিউব", Icons.Default.PlayCircle),
+    MUKUL_OTT("ওটিটি", Icons.Default.VideoLibrary),
     EXTRACTOR("ডাউনলোড", Icons.Default.CloudDownload),
     PROFILE("প্রোফাইল", Icons.Default.Person)
 }
@@ -202,10 +203,10 @@ fun MukulPlusApp() {
                     HorizontalDivider(color = CinemaBorder)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Drawer Navigation Items
+                    // Drawer Navigation Items (Concise labels)
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Home, contentDescription = null, tint = if (currentTab == ScreenTab.HOME) BrandRed else TextSecondary) },
-                        label = { Text("হোম পেজ (Home)") },
+                        label = { Text("হোম") },
                         selected = currentTab == ScreenTab.HOME,
                         onClick = {
                             currentTab = ScreenTab.HOME
@@ -216,7 +217,7 @@ fun MukulPlusApp() {
 
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Movie, contentDescription = null, tint = if (currentTab == ScreenTab.MOVIES) BrandRed else TextSecondary) },
-                        label = { Text("মুভি ও সিরিজ ব্রাউজার") },
+                        label = { Text("মুভি ও সিরিজ") },
                         selected = currentTab == ScreenTab.MOVIES,
                         onClick = {
                             currentTab = ScreenTab.MOVIES
@@ -227,7 +228,7 @@ fun MukulPlusApp() {
 
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Tv, contentDescription = null, tint = if (currentTab == ScreenTab.LIVE_TV) BrandRed else TextSecondary) },
-                        label = { Text("বাংলাদেশী ও BDIX লাইভ টিভি") },
+                        label = { Text("লাইভ টিভি") },
                         selected = currentTab == ScreenTab.LIVE_TV,
                         onClick = {
                             currentTab = ScreenTab.LIVE_TV
@@ -238,7 +239,7 @@ fun MukulPlusApp() {
 
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.MusicNote, contentDescription = null, tint = if (currentTab == ScreenTab.MUSIC) BrandRed else TextSecondary) },
-                        label = { Text("মিউজিক প্লেয়ার (Hindi & Bangla Music)") },
+                        label = { Text("মিউজিক") },
                         selected = currentTab == ScreenTab.MUSIC,
                         onClick = {
                             currentTab = ScreenTab.MUSIC
@@ -248,8 +249,19 @@ fun MukulPlusApp() {
                     )
 
                     NavigationDrawerItem(
-                        icon = { Icon(Icons.Default.Public, contentDescription = null, tint = if (currentTab == ScreenTab.MUKUL_OTT) BrandRed else TextSecondary) },
-                        label = { Text("মুকুল ওটিটি (Mukul OTT Web)") },
+                        icon = { Icon(Icons.Default.PlayCircle, contentDescription = null, tint = if (currentTab == ScreenTab.YOUTUBE) BrandRed else TextSecondary) },
+                        label = { Text("ইউটিউব") },
+                        selected = currentTab == ScreenTab.YOUTUBE,
+                        onClick = {
+                            currentTab = ScreenTab.YOUTUBE
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = if (currentTab == ScreenTab.MUKUL_OTT) BrandRed else TextSecondary) },
+                        label = { Text("মুকুল ওটিটি") },
                         selected = currentTab == ScreenTab.MUKUL_OTT,
                         onClick = {
                             currentTab = ScreenTab.MUKUL_OTT
@@ -260,7 +272,7 @@ fun MukulPlusApp() {
 
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = if (currentTab == ScreenTab.EXTRACTOR) BrandRed else TextSecondary) },
-                        label = { Text("ডাউনলোড (Mukul Movies)") },
+                        label = { Text("ডাউনলোড") },
                         selected = currentTab == ScreenTab.EXTRACTOR,
                         onClick = {
                             currentTab = ScreenTab.EXTRACTOR
@@ -284,7 +296,7 @@ fun MukulPlusApp() {
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(if (currentThemeMode == ThemeMode.DARK) "ডার্ক মোড (Dark)" else "লাইট মোড (Light)")
+                                Text("ডার্ক মোড")
                                 Switch(
                                     checked = currentThemeMode == ThemeMode.DARK,
                                     onCheckedChange = { ThemeManager.toggleTheme(context) },
@@ -303,7 +315,7 @@ fun MukulPlusApp() {
 
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Translate, contentDescription = null, tint = CyanAccent) },
-                        label = { Text("ভাষা পরিবর্তন (${LanguageManager.currentLanguage.displayName})", color = CyanAccent) },
+                        label = { Text("ভাষা (${LanguageManager.currentLanguage.displayName})", color = CyanAccent) },
                         selected = false,
                         onClick = {
                             coroutineScope.launch { drawerState.close() }
@@ -312,20 +324,11 @@ fun MukulPlusApp() {
                         colors = drawerItemColors()
                     )
 
-                    NavigationDrawerItem(
-                        icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = Color(0xFF10B981)) },
-                        label = { Text("অ্যাপ অটো-আপডেট (Firebase)", color = Color(0xFF10B981)) },
-                        selected = false,
-                        onClick = {
-                            coroutineScope.launch { drawerState.close() }
-                            showUpdateDialog = true
-                        },
-                        colors = drawerItemColors()
-                    )
+                    // Note: Update button deleted per user request
 
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Person, contentDescription = null, tint = if (currentTab == ScreenTab.PROFILE) BrandRed else TextSecondary) },
-                        label = { Text("প্রোফাইল ও ওয়াচলিস্ট") },
+                        label = { Text("প্রোফাইল") },
                         selected = currentTab == ScreenTab.PROFILE,
                         onClick = {
                             currentTab = ScreenTab.PROFILE
@@ -350,7 +353,7 @@ fun MukulPlusApp() {
                     ) {
                         Icon(Icons.Default.ExitToApp, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("লগআউট করুন (Sign Out)", fontSize = 12.sp)
+                        Text("লগআউট", fontSize = 12.sp)
                     }
                 }
             }
@@ -359,79 +362,123 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.MUKUL_OTT) {
-                    TopAppBar(
-                        title = {
-                            MukulPlusLogo(iconSize = 30, textSize = 18)
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                                Icon(imageVector = Icons.Default.Menu, contentDescription = "Open Sidebar", tint = TextPrimary)
+                if (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE) {
+                    Surface(
+                        color = CinemaSurface,
+                        tonalElevation = 3.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .statusBarsPadding()
+                                .height(46.dp)
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = { coroutineScope.launch { drawerState.open() } },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Menu,
+                                    contentDescription = "Open Sidebar",
+                                    tint = TextPrimary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
-                        },
-                        actions = {
-                            // Dark/Light Theme Toggle Action
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            Box(modifier = Modifier.weight(1f)) {
+                                MukulPlusLogo(iconSize = 24, textSize = 15)
+                            }
+
                             val topBarThemeMode by ThemeManager.themeMode.collectAsState()
-                            IconButton(onClick = { ThemeManager.toggleTheme(context) }) {
+                            IconButton(
+                                onClick = { ThemeManager.toggleTheme(context) },
+                                modifier = Modifier.size(34.dp)
+                            ) {
                                 Icon(
                                     imageVector = if (topBarThemeMode == ThemeMode.DARK) Icons.Default.LightMode else Icons.Default.DarkMode,
                                     contentDescription = "Toggle Dark/Light Mode",
                                     tint = if (topBarThemeMode == ThemeMode.DARK) Color(0xFFFFB020) else TextPrimary,
-                                    modifier = Modifier.size(22.dp)
+                                    modifier = Modifier.size(18.dp)
                                 )
                             }
 
-                            // Profile Avatar
-                            IconButton(onClick = { currentTab = ScreenTab.PROFILE }) {
+                            IconButton(
+                                onClick = { currentTab = ScreenTab.PROFILE },
+                                modifier = Modifier.size(34.dp)
+                            ) {
                                 Surface(
                                     color = BrandRed,
                                     shape = CircleShape,
-                                    modifier = Modifier.size(32.dp)
+                                    modifier = Modifier.size(26.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.Person, contentDescription = "Profile", tint = Color.White, modifier = Modifier.size(18.dp))
+                                        Icon(Icons.Default.Person, contentDescription = "Profile", tint = Color.White, modifier = Modifier.size(15.dp))
                                     }
                                 }
                             }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = CinemaSurface)
-                    )
+                        }
+                    }
                 }
             },
             bottomBar = {
                 Column {
                     MiniMusicPlayer()
-                    NavigationBar(
-                        containerColor = CinemaSurface,
-                        tonalElevation = 8.dp
+                    Surface(
+                        color = CinemaSurface,
+                        tonalElevation = 6.dp,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        ScreenTab.values().forEach { tab ->
-                            val isSelected = currentTab == tab
-                            NavigationBarItem(
-                                selected = isSelected,
-                                onClick = { currentTab = tab },
-                                icon = {
-                                    Icon(
-                                        imageVector = tab.icon,
-                                        contentDescription = tab.title,
-                                        tint = if (isSelected) BrandRed else TextMuted,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                },
-                                label = {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .navigationBarsPadding()
+                                .height(50.dp)
+                                .padding(horizontal = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceAround
+                        ) {
+                            ScreenTab.values().forEach { tab ->
+                                val isSelected = currentTab == tab
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { currentTab = tab }
+                                        .padding(vertical = 3.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.Center
+                                ) {
+                                    Surface(
+                                        color = if (isSelected) BrandRed.copy(alpha = 0.18f) else Color.Transparent,
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = tab.icon,
+                                                contentDescription = tab.title,
+                                                tint = if (isSelected) BrandRed else TextMuted,
+                                                modifier = Modifier.size(17.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(1.dp))
                                     Text(
                                         text = tab.title,
                                         color = if (isSelected) BrandRed else TextMuted,
-                                        fontSize = 8.5.sp,
+                                        fontSize = 8.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                     )
-                                },
-                                colors = NavigationBarItemDefaults.colors(
-                                    indicatorColor = BrandRed.copy(alpha = 0.15f)
-                                )
-                            )
+                                }
+                            }
                         }
                     }
                 }
@@ -472,6 +519,11 @@ fun MukulPlusApp() {
                     }
                     ScreenTab.MUSIC -> {
                         MusicScreen(musicRepository = musicRepository)
+                    }
+                    ScreenTab.YOUTUBE -> {
+                        YouTubeScreen(
+                            onNavigateToDownloads = { currentTab = ScreenTab.EXTRACTOR }
+                        )
                     }
                     ScreenTab.MUKUL_OTT -> {
                         MukulOttScreen()
