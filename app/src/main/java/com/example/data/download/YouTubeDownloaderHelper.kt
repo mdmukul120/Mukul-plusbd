@@ -29,8 +29,10 @@ object YouTubeDownloaderHelper {
     private const val TAG = "YouTubeDownloader"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(25, TimeUnit.SECONDS)
-        .readTimeout(25, TimeUnit.SECONDS)
+        .connectTimeout(20, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
+        .retryOnConnectionFailure(true)
         .build()
 
     val availableResolutions = listOf(
@@ -122,10 +124,10 @@ object YouTubeDownloaderHelper {
             val progressApiUrl = "https://p.savenow.to/api/progress?id=$taskId"
             var directDownloadUrl: String? = null
             var attempts = 0
-            val maxAttempts = 35 // ~50 seconds max
+            val maxAttempts = 55 // ~45 seconds max with 800ms intervals
 
             while (attempts < maxAttempts) {
-                delay(1500)
+                delay(800)
                 attempts++
 
                 val pollReq = Request.Builder()

@@ -1,7 +1,6 @@
 package com.example.data.download
 
 import android.content.Context
-import android.content.SharedPreferences
 import android.os.Environment
 import android.util.Log
 import kotlinx.coroutines.*
@@ -10,8 +9,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -19,8 +16,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 enum class DownloadStatus {
+    IDLE,
     QUEUED,
     DOWNLOADING,
+    PAUSED,
     COMPLETED,
     FAILED,
     CANCELLED
@@ -33,105 +32,102 @@ data class DownloadTask(
     val poster: String,
     val quality: String,
     val downloadUrl: String,
-    val fileName: String,
-    val filePath: String = "",
-    val totalBytes: Long = 0L,
-    val downloadedBytes: Long = 0L,
-    val progressPercent: Int = 0,
-    val speedText: String = "",
     val status: DownloadStatus = DownloadStatus.QUEUED,
-    val errorMessage: String? = null
-)
+    val progress: Float = 0f,
+    val downloadedBytes: Long = 0L,
+    val totalBytes: Long = 0L,
+    val speedText: String = "",
+    val filePath: String = "",
+    val errorMessage: String = ""
+) {
+    val progressPercent: Int
+        get() = (progress * 100).toInt().coerceIn(0, 100)
+}
 
 object InAppDownloader {
     private const val TAG = "InAppDownloader"
-    private const val PREFS_NAME = "mukul_downloads_prefs"
-    private const val KEY_COMPLETED = "completed_downloads"
+    private const val DOWNLOAD_DIR_NAME = "MukulOttDownloads"
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)
-        .followSslRedirects(true)
         .build()
 
+    private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
 
+    // Tasks Map
     private val _tasks = MutableStateFlow<Map<String, DownloadTask>>(emptyMap())
     val tasks: StateFlow<Map<String, DownloadTask>> = _tasks.asStateFlow()
 
-    private val _completedList = MutableStateFlow<List<DownloadTask>>(emptyList())
-    val completedList: StateFlow<List<DownloadTask>> = _completedList.asStateFlow()
-    val completedDownloads: StateFlow<List<DownloadTask>> get() = completedList
+    // Completed downloads cache
+    private val _completedDownloads = MutableStateFlow<List<DownloadTask>>(emptyList())
+    val completedDownloads: StateFlow<List<DownloadTask>> = _completedDownloads.asStateFlow()
 
-    private var isInitialized = false
-
+    /**
+     * Optional initialization method called by screens
+     */
     fun init(context: Context) {
-        if (isInitialized) return
-        isInitialized = true
-        loadCompletedFromPrefs(context)
-    }
-
-    private fun getPrefs(context: Context): SharedPreferences {
-        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-    }
-
-    private fun loadCompletedFromPrefs(context: Context) {
-        val prefs = getPrefs(context)
-        val jsonStr = prefs.getString(KEY_COMPLETED, null) ?: return
-        try {
-            val array = JSONArray(jsonStr)
-            val list = mutableListOf<DownloadTask>()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                val filePath = obj.optString("filePath")
-                val file = File(filePath)
-                if (file.exists() && file.length() > 0) {
-                    list.add(
-                        DownloadTask(
-                            id = obj.optString("id"),
-                            movieSlug = obj.optString("movieSlug"),
-                            title = obj.optString("title"),
-                            poster = obj.optString("poster"),
-                            quality = obj.optString("quality"),
-                            downloadUrl = obj.optString("downloadUrl"),
-                            fileName = obj.optString("fileName"),
-                            filePath = filePath,
-                            totalBytes = obj.optLong("totalBytes", file.length()),
-                            downloadedBytes = file.length(),
-                            progressPercent = 100,
-                            status = DownloadStatus.COMPLETED
-                        )
-                    )
-                }
-            }
-            _completedList.value = list
-        } catch (e: Exception) {
-            Log.e(TAG, "Error loading completed downloads", e)
+        coroutineScope.launch {
+            scanExistingFiles(context)
         }
     }
 
-    private fun saveCompletedToPrefs(context: Context) {
-        val prefs = getPrefs(context)
-        val array = JSONArray()
-        _completedList.value.forEach { task ->
-            val obj = JSONObject().apply {
-                put("id", task.id)
-                put("movieSlug", task.movieSlug)
-                put("title", task.title)
-                put("poster", task.poster)
-                put("quality", task.quality)
-                put("downloadUrl", task.downloadUrl)
-                put("fileName", task.fileName)
-                put("filePath", task.filePath)
-                put("totalBytes", task.totalBytes)
-            }
-            array.put(obj)
+    /**
+     * Get the dedicated In-App offline movies folder
+     */
+    fun getDownloadDirectory(context: Context): File {
+        val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), DOWNLOAD_DIR_NAME)
+        if (!dir.exists()) {
+            dir.mkdirs()
         }
-        prefs.edit().putString(KEY_COMPLETED, array.toString()).apply()
+        return dir
     }
 
+    /**
+     * Scan downloaded files on disk to populate completedDownloads
+     */
+    private fun scanExistingFiles(context: Context) {
+        val dir = getDownloadDirectory(context)
+        val files = dir.listFiles { f -> f.isFile && (f.name.endsWith(".mp4") || f.name.endsWith(".mkv")) } ?: return
+        val list = mutableListOf<DownloadTask>()
+        for (f in files) {
+            val name = f.nameWithoutExtension
+            val task = DownloadTask(
+                id = f.name,
+                movieSlug = name,
+                title = name.replace("_", " "),
+                poster = "",
+                quality = if (f.name.contains("1080")) "1080p" else if (f.name.contains("720")) "720p" else "480p",
+                downloadUrl = "",
+                status = DownloadStatus.COMPLETED,
+                progress = 1.0f,
+                downloadedBytes = f.length(),
+                totalBytes = f.length(),
+                speedText = "ডাউনলোড সম্পন্ন",
+                filePath = f.absolutePath
+            )
+            list.add(task)
+        }
+        _completedDownloads.value = list
+    }
+
+    /**
+     * Check if a movie slug was completed
+     */
+    fun getCompletedMovie(movieSlug: String): DownloadTask? {
+        if (movieSlug.isEmpty()) return null
+        return _completedDownloads.value.firstOrNull {
+            it.movieSlug.equals(movieSlug, ignoreCase = true) ||
+            it.movieSlug.contains(movieSlug, ignoreCase = true) ||
+            it.id.contains(movieSlug, ignoreCase = true)
+        }
+    }
+
+    /**
+     * Start an in-app download
+     */
     fun startDownload(
         context: Context,
         movieSlug: String,
@@ -140,223 +136,202 @@ object InAppDownloader {
         quality: String,
         downloadUrl: String
     ): String {
-        init(context)
+        val taskId = "${movieSlug}_${quality.filter { it.isDigit() }.ifEmpty { "HD" }}"
 
-        val id = "${movieSlug}_${quality.filter { it.isLetterOrDigit() }}"
-
-        // If already completed and file exists, don't duplicate
-        val existingCompleted = _completedList.value.firstOrNull { it.id == id }
-        if (existingCompleted != null && File(existingCompleted.filePath).exists()) {
-            return id
+        val existing = _tasks.value[taskId]
+        if (existing != null && existing.status == DownloadStatus.DOWNLOADING) {
+            return taskId
         }
-
-        // If currently downloading
-        val currentTask = _tasks.value[id]
-        if (currentTask != null && currentTask.status == DownloadStatus.DOWNLOADING) {
-            return id
-        }
-
-        val sanitized = title.replace(Regex("[^a-zA-Z0-9._-]"), "_").trim('_')
-        val cleanTitle = if (sanitized.isNotEmpty()) sanitized.take(40) else (movieSlug.ifEmpty { "video_${System.currentTimeMillis()}" }).take(40)
-        val cleanQuality = quality.replace(Regex("[^a-zA-Z0-9]"), "").ifEmpty { "HD" }
-        val ext = when {
-            quality.lowercase().contains("mp3") || downloadUrl.contains(".mp3") -> "mp3"
-            downloadUrl.contains(".mkv") -> "mkv"
-            else -> "mp4"
-        }
-        val fileName = "${cleanTitle}_${cleanQuality}.${ext}"
-
-        val moviesDir = context.getExternalFilesDir(Environment.DIRECTORY_MOVIES)
-            ?: File(context.filesDir, "movies")
-        if (!moviesDir.exists()) {
-            moviesDir.mkdirs()
-        }
-        val targetFile = File(moviesDir, fileName)
 
         val task = DownloadTask(
-            id = id,
+            id = taskId,
             movieSlug = movieSlug,
             title = title,
             poster = poster,
             quality = quality,
             downloadUrl = downloadUrl,
-            fileName = fileName,
-            filePath = targetFile.absolutePath,
-            status = DownloadStatus.DOWNLOADING
+            status = DownloadStatus.QUEUED
         )
 
         updateTask(task)
 
-        val job = scope.launch {
-            var inputStream: InputStream? = null
-            var outputStream: FileOutputStream? = null
-            try {
-                val request = Request.Builder()
-                    .url(downloadUrl)
-                    .header("User-Agent", "MukulPlusApp/1.0 (Android; Downloader)")
-                    .header("Accept", "*/*")
-                    .build()
-
-                val response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    throw Exception("HTTP ${response.code}: ${response.message}")
-                }
-
-                val body = response.body ?: throw Exception("Empty response body")
-                val contentLength = body.contentLength()
-                inputStream = body.byteStream()
-                outputStream = FileOutputStream(targetFile)
-
-                val buffer = ByteArray(32 * 1024)
-                var bytesRead: Int
-                var totalBytesRead = 0L
-                var lastUpdateTime = System.currentTimeMillis()
-                var bytesSinceLastUpdate = 0L
-
-                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                    if (!isActive) {
-                        targetFile.delete()
-                        updateTask(task.copy(status = DownloadStatus.CANCELLED))
-                        return@launch
-                    }
-
-                    outputStream.write(buffer, 0, bytesRead)
-                    totalBytesRead += bytesRead
-                    bytesSinceLastUpdate += bytesRead
-
-                    val now = System.currentTimeMillis()
-                    if (now - lastUpdateTime >= 300) {
-                        val durationSec = (now - lastUpdateTime) / 1000.0
-                        val speedBytesPerSec = if (durationSec > 0) (bytesSinceLastUpdate / durationSec).toLong() else 0L
-                        val speedStr = formatSpeed(speedBytesPerSec)
-
-                        val percent = if (contentLength > 0) {
-                            ((totalBytesRead * 100) / contentLength).toInt().coerceIn(0, 99)
-                        } else {
-                            0
-                        }
-
-                        updateTask(
-                            task.copy(
-                                totalBytes = contentLength,
-                                downloadedBytes = totalBytesRead,
-                                progressPercent = percent,
-                                speedText = speedStr,
-                                status = DownloadStatus.DOWNLOADING
-                            )
-                        )
-
-                        lastUpdateTime = now
-                        bytesSinceLastUpdate = 0L
-                    }
-                }
-
-                outputStream.flush()
-
-                // Finished successfully!
-                val completedTask = task.copy(
-                    totalBytes = if (contentLength > 0) contentLength else totalBytesRead,
-                    downloadedBytes = totalBytesRead,
-                    progressPercent = 100,
-                    speedText = "",
-                    status = DownloadStatus.COMPLETED
-                )
-
-                updateTask(completedTask)
-
-                withContext(Dispatchers.Main) {
-                    val updated = _completedList.value.filterNot { it.id == id } + completedTask
-                    _completedList.value = updated
-                    saveCompletedToPrefs(context)
-                }
-
-            } catch (e: Exception) {
-                if (isActive) {
-                    Log.e(TAG, "Download error for $title", e)
-                    updateTask(
-                        task.copy(
-                            status = DownloadStatus.FAILED,
-                            errorMessage = e.localizedMessage ?: "Download failed"
-                        )
-                    )
-                }
-            } finally {
-                try {
-                    inputStream?.close()
-                } catch (_: Exception) {}
-                try {
-                    outputStream?.close()
-                } catch (_: Exception) {}
-                activeJobs.remove(id)
-            }
+        val job = coroutineScope.launch {
+            runDownload(context, task)
         }
+        activeJobs[taskId] = job
 
-        activeJobs[id] = job
-        return id
+        return taskId
     }
 
-    fun cancelDownload(id: String) {
-        activeJobs[id]?.cancel()
-        activeJobs.remove(id)
-        val current = _tasks.value[id]
-        if (current != null) {
-            try {
-                if (current.filePath.isNotEmpty()) {
-                    File(current.filePath).delete()
+    private suspend fun runDownload(context: Context, task: DownloadTask) {
+        updateTask(task.copy(status = DownloadStatus.DOWNLOADING, progress = 0f))
+
+        val downloadDir = getDownloadDirectory(context)
+        val safeTitle = task.title.replace("[^a-zA-Z0-9.-]".toRegex(), "_")
+        val fileName = "${safeTitle}_${task.quality.filter { it.isDigit() }.ifEmpty { "HD" }}.mp4"
+        val targetFile = File(downloadDir, fileName)
+
+        var inputStream: InputStream? = null
+        var outputStream: FileOutputStream? = null
+
+        try {
+            val requestBuilder = Request.Builder()
+                .url(task.downloadUrl)
+                .header("User-Agent", "Mozilla/5.0 (Android; MukulPlusApp/1.0)")
+                .header("Accept", "*/*")
+
+            if (task.downloadUrl.contains("dramalinkbd.tv") || task.downloadUrl.contains("mukul-ott")) {
+                requestBuilder.header("Referer", "https://mukul-ott.ai.studio/")
+            }
+
+            val request = requestBuilder.build()
+            val response = client.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                updateTask(
+                    task.copy(
+                        status = DownloadStatus.FAILED,
+                        errorMessage = "সার্ভার এরর: HTTP ${response.code}"
+                    )
+                )
+                return
+            }
+
+            val body = response.body
+            if (body == null) {
+                updateTask(
+                    task.copy(
+                        status = DownloadStatus.FAILED,
+                        errorMessage = "ডাউনলোড ফাইল পাওয়া যায়নি"
+                    )
+                )
+                return
+            }
+
+            val totalBytes = body.contentLength()
+            inputStream = body.byteStream()
+            outputStream = FileOutputStream(targetFile)
+
+            val buffer = ByteArray(32 * 1024)
+            var downloadedBytes = 0L
+            var read: Int
+
+            var lastUpdateTime = System.currentTimeMillis()
+            var bytesSinceLastUpdate = 0L
+
+            while (inputStream.read(buffer).also { read = it } != -1) {
+                outputStream.write(buffer, 0, read)
+                downloadedBytes += read
+                bytesSinceLastUpdate += read
+
+                val now = System.currentTimeMillis()
+                if (now - lastUpdateTime >= 500) {
+                    val durationSec = (now - lastUpdateTime) / 1000.0
+                    val speedBytesPerSec = if (durationSec > 0) (bytesSinceLastUpdate / durationSec).toLong() else 0L
+                    val speedText = formatSpeed(speedBytesPerSec)
+
+                    val progress = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else 0f
+
+                    updateTask(
+                        task.copy(
+                            status = DownloadStatus.DOWNLOADING,
+                            downloadedBytes = downloadedBytes,
+                            totalBytes = totalBytes,
+                            progress = progress,
+                            speedText = speedText,
+                            filePath = targetFile.absolutePath
+                        )
+                    )
+
+                    lastUpdateTime = now
+                    bytesSinceLastUpdate = 0L
                 }
+            }
+
+            outputStream.flush()
+
+            val completedTask = task.copy(
+                status = DownloadStatus.COMPLETED,
+                downloadedBytes = downloadedBytes,
+                totalBytes = downloadedBytes,
+                progress = 1.0f,
+                speedText = "ডাউনলোড সম্পন্ন",
+                filePath = targetFile.absolutePath
+            )
+            updateTask(completedTask)
+
+            val currentCompleted = _completedDownloads.value.toMutableList()
+            currentCompleted.removeAll { it.id == completedTask.id }
+            currentCompleted.add(0, completedTask)
+            _completedDownloads.value = currentCompleted
+
+        } catch (e: CancellationException) {
+            updateTask(task.copy(status = DownloadStatus.CANCELLED, speedText = "বাতিল করা হয়েছে"))
+            if (targetFile.exists()) targetFile.delete()
+        } catch (e: Exception) {
+            Log.e(TAG, "Download failed for ${task.title}", e)
+            updateTask(
+                task.copy(
+                    status = DownloadStatus.FAILED,
+                    errorMessage = e.message ?: "ডাউনলোড ব্যর্থ হয়েছে"
+                )
+            )
+        } finally {
+            try {
+                inputStream?.close()
+                outputStream?.close()
             } catch (_: Exception) {}
+            activeJobs.remove(task.id)
+        }
+    }
+
+    fun cancelDownload(taskId: String) {
+        activeJobs[taskId]?.cancel()
+        activeJobs.remove(taskId)
+        val current = _tasks.value[taskId]
+        if (current != null) {
             updateTask(current.copy(status = DownloadStatus.CANCELLED))
         }
     }
 
-    fun deleteDownloadedMovie(context: Context, id: String) {
-        val task = _completedList.value.firstOrNull { it.id == id }
-        if (task != null) {
-            try {
-                val file = File(task.filePath)
-                if (file.exists()) {
-                    file.delete()
-                }
-            } catch (_: Exception) {}
-            _completedList.value = _completedList.value.filterNot { it.id == id }
-            saveCompletedToPrefs(context)
+    fun deleteDownloadedMovie(context: Context, taskId: String) {
+        val task = _tasks.value[taskId] ?: _completedDownloads.value.firstOrNull { it.id == taskId }
+        if (task != null && task.filePath.isNotEmpty()) {
+            val file = File(task.filePath)
+            if (file.exists()) {
+                file.delete()
+            }
         }
-        val taskMap = _tasks.value.toMutableMap()
-        taskMap.remove(id)
-        _tasks.value = taskMap
-    }
+        val currentTasks = _tasks.value.toMutableMap()
+        currentTasks.remove(taskId)
+        _tasks.value = currentTasks
 
-    fun getTask(id: String): DownloadTask? {
-        return _tasks.value[id] ?: _completedList.value.firstOrNull { it.id == id }
-    }
-
-    fun getCompletedMovie(slug: String): DownloadTask? {
-        return _completedList.value.firstOrNull { it.movieSlug == slug && File(it.filePath).exists() }
+        val currentCompleted = _completedDownloads.value.toMutableList()
+        currentCompleted.removeAll { it.id == taskId }
+        _completedDownloads.value = currentCompleted
     }
 
     private fun updateTask(task: DownloadTask) {
-        val map = _tasks.value.toMutableMap()
-        map[task.id] = task
-        _tasks.value = map
+        val current = _tasks.value.toMutableMap()
+        current[task.id] = task
+        _tasks.value = current
+    }
+
+    private fun formatSpeed(bytesPerSec: Long): String {
+        return when {
+            bytesPerSec >= 1024 * 1024 -> String.format("%.1f MB/s", bytesPerSec.toDouble() / (1024 * 1024))
+            bytesPerSec >= 1024 -> String.format("%d KB/s", bytesPerSec / 1024)
+            else -> "$bytesPerSec B/s"
+        }
     }
 
     fun formatFileSize(bytes: Long): String {
         if (bytes <= 0) return "0 MB"
-        val mb = bytes / (1024.0 * 1024.0)
+        val mb = bytes.toDouble() / (1024 * 1024)
         return if (mb >= 1024) {
-            String.format("%.1f GB", mb / 1024.0)
+            String.format("%.2f GB", mb / 1024)
         } else {
             String.format("%.1f MB", mb)
-        }
-    }
-
-    private fun formatSpeed(bytesPerSec: Long): String {
-        if (bytesPerSec <= 0) return ""
-        val kb = bytesPerSec / 1024.0
-        return if (kb >= 1024) {
-            String.format("%.1f MB/s", kb / 1024.0)
-        } else {
-            String.format("%.0f KB/s", kb)
         }
     }
 }

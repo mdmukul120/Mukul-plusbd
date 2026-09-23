@@ -17,7 +17,8 @@ data class MukulOttWatchSource(
     val audio: String = "",
     val name: String = "",
     val episode: String? = null,
-    val directUrl: String = ""
+    val directUrl: String = "",
+    val proxyUrl: String = ""
 )
 
 data class MukulOttDownloadOption(
@@ -33,7 +34,10 @@ data class MukulOttEpisode(
     val title: String = "",
     val episodeNumber: Int = 1,
     val streamUrl: String = "",
-    val downloadUrl: String = ""
+    val downloadUrl: String = "",
+    val sources: List<MukulOttWatchSource> = emptyList(),
+    val downloads: List<MukulOttDownloadOption> = emptyList(),
+    val screenshot: String = ""
 )
 
 data class MukulOttMovieDetail(
