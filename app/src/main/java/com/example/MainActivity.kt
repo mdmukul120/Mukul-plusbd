@@ -92,6 +92,18 @@ fun MukulPlusApp() {
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
 
+    var isAppStarting by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(1600)
+        isAppStarting = false
+    }
+
+    if (isAppStarting) {
+        MukulSplashScreen()
+        return
+    }
+
     // -----------------------------------------------------------
     // FORCED LOGIN GATEWAY:
     // মুভির পেজে ঢুকতেই প্রথমে লগইন অপশন লাগবে (হুবহু ছবির মতো)

@@ -1,8 +1,11 @@
 package com.example.ui.screens
 
 import android.annotation.SuppressLint
-import android.graphics.Bitmap
-import android.webkit.*
+import android.content.Intent
+import android.webkit.WebChromeClient
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
@@ -10,9 +13,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -21,10 +27,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,22 +40,19 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.data.api.YouTubeApiService
+import com.example.data.api.YouTubeVideoItem
 import com.example.data.download.*
-import com.example.ui.components.VideoPlayerView
 import com.example.ui.theme.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-private const val YOUTUBE_HOME_URL = "https://m.youtube.com"
+private data class YouTubeCategory(
+    val id: String,
+    val title: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector
+)
 
-class YouTubeWebAppInterface(private val onUrlChanged: (String) -> Unit) {
-    @JavascriptInterface
-    fun notifyUrl(url: String) {
-        onUrlChanged(url)
-    }
-}
-
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun YouTubeScreen(
     onNavigateToDownloads: () -> Unit = {},
@@ -57,46 +62,79 @@ fun YouTubeScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    var currentUrl by remember { mutableStateOf(YOUTUBE_HOME_URL) }
-    var detectedWatchUrl by remember { mutableStateOf<String?>(null) }
-    var webViewInstance by remember { mutableStateOf<WebView?>(null) }
-    var isLoadingPage by remember { mutableStateOf(false) }
-    var pageTitle by remember { mutableStateOf("YouTube") }
+    // Screen State
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("") }
+    var isLoadingFeed by remember { mutableStateOf(false) }
+    var videoList by remember { mutableStateOf<List<YouTubeVideoItem>>(emptyList()) }
 
-    // Dialog & Extraction States
+    // Selected Video for Play Page
+    var activeVideo by remember { mutableStateOf<YouTubeVideoItem?>(null) }
+    var relatedVideos by remember { mutableStateOf<List<YouTubeVideoItem>>(emptyList()) }
+    var isLoadingRelated by remember { mutableStateOf(false) }
+
+    // Download & Resolution Dialog State
+    var targetDownloadVideo by remember { mutableStateOf<YouTubeVideoItem?>(null) }
     var showResolutionDialog by remember { mutableStateOf(false) }
     var isExtracting by remember { mutableStateOf(false) }
     var extractionStatus by remember { mutableStateOf("") }
     var extractionJob by remember { mutableStateOf<Job?>(null) }
     var extractionResult by remember { mutableStateOf<ExtractionResult?>(null) }
 
-    // In-app Video Player State
-    var activePlayUrl by remember { mutableStateOf<String?>(null) }
-    var activePlayTitle by remember { mutableStateOf<String>("") }
+    // Categories
+    val categories = remember {
+        listOf(
+            YouTubeCategory("", "🔥 ট্রেন্ডিং (Trending)", Icons.Default.TrendingUp),
+            YouTubeCategory("bangla_song", "🎵 বাংলা গান", Icons.Default.MusicNote),
+            YouTubeCategory("natok", "🎭 নাটক (Natok)", Icons.Default.LiveTv),
+            YouTubeCategory("movie_trailer", "🎬 ট্রেইলার", Icons.Default.Movie),
+            YouTubeCategory("hindi_song", "🎶 হিন্দি গান", Icons.Default.Headphones),
+            YouTubeCategory("islamic", "🌙 ইসলামিক", Icons.Default.WbTwilight),
+            YouTubeCategory("news", "📰 সংবাদ (News)", Icons.Default.Newspaper),
+            YouTubeCategory("gaming", "🎮 গেমিং", Icons.Default.SportsEsports)
+        )
+    }
 
-    // Manual URL Paste Dialog
-    var showUrlInputDialog by remember { mutableStateOf(false) }
-    var manualUrlInput by remember { mutableStateOf("") }
-
-    // Monitor InAppDownloader tasks
-    val activeTasks by InAppDownloader.tasks.collectAsState()
-    val activeYouTubeTask = remember(activeTasks) {
-        activeTasks.values.firstOrNull {
-            (it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.QUEUED)
+    // Function to load feed
+    fun loadFeed(category: String = "", query: String = "") {
+        coroutineScope.launch {
+            isLoadingFeed = true
+            if (query.isNotBlank()) {
+                videoList = YouTubeApiService.searchVideos(query)
+            } else {
+                videoList = YouTubeApiService.getTrendingVideos(category)
+            }
+            isLoadingFeed = false
         }
     }
 
-    // Handle back button
+    // Function to open Video Play Page
+    fun openVideo(video: YouTubeVideoItem) {
+        activeVideo = video
+        coroutineScope.launch {
+            isLoadingRelated = true
+            relatedVideos = YouTubeApiService.getRelatedVideos(video.id, video.title)
+            isLoadingRelated = false
+        }
+    }
+
+    // Initial load
+    LaunchedEffect(Unit) {
+        loadFeed()
+    }
+
+    // Back button handling
     BackHandler(enabled = true) {
         when {
-            activePlayUrl != null -> {
-                activePlayUrl = null
-            }
             showResolutionDialog -> {
-                showResolutionDialog = false
+                if (!isExtracting) showResolutionDialog = false
             }
-            webViewInstance?.canGoBack() == true -> {
-                webViewInstance?.goBack()
+            activeVideo != null -> {
+                activeVideo = null
+            }
+            searchQuery.isNotBlank() -> {
+                searchQuery = ""
+                loadFeed(selectedCategory)
             }
             onBack != null -> {
                 onBack()
@@ -104,672 +142,847 @@ fun YouTubeScreen(
         }
     }
 
-    fun handleUrlUpdate(newUrl: String?) {
-        if (newUrl.isNullOrBlank()) return
-        currentUrl = newUrl
-        if (YouTubeDownloaderHelper.isWatchUrl(newUrl)) {
-            detectedWatchUrl = newUrl
-        } else if (!newUrl.contains("watch") && !newUrl.contains("shorts")) {
-            // Cleared if navigated away to home or search results
-            detectedWatchUrl = null
-        }
-    }
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(CinemaBackground)
+    ) {
+        if (activeVideo != null) {
+            // ==============================================================
+            // 1. CUSTOM VIDEO PLAY PAGE
+            // ==============================================================
+            val currentVideo = activeVideo!!
 
-    if (activePlayUrl != null) {
-        // Full screen / In-App Video Player
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .background(Color.Black)
-        ) {
-            Surface(
-                color = CinemaSurface,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(
-                        onClick = { activePlayUrl = null },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = TextPrimary)
-                    }
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = activePlayTitle.ifEmpty { "ইউটিউব ভিডিও প্লেয়ার" },
-                        color = TextPrimary,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Box(
+            Column(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
+                    .fillMaxSize()
+                    .background(CinemaBackground)
             ) {
-                VideoPlayerView(
-                    videoUrl = activePlayUrl!!,
-                    title = activePlayTitle,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-    } else {
-        Column(
-            modifier = modifier
-                .fillMaxSize()
-                .background(CinemaBackground)
-        ) {
-            // Minimal Top Bar with Back, Refresh & Title (No browser URL bar)
-            Surface(
-                color = CinemaSurface,
-                tonalElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth().statusBarsPadding()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(44.dp)
-                        .padding(horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                // Top Custom Player Bar
+                Surface(
+                    color = CinemaSurface,
+                    modifier = Modifier.fillMaxWidth().statusBarsPadding()
                 ) {
-                    // Back button: navigates web history or goes back in app
-                    IconButton(
-                        onClick = {
-                            if (webViewInstance?.canGoBack() == true) {
-                                webViewInstance?.goBack()
-                            } else if (onBack != null) {
-                                onBack()
-                            }
-                        },
-                        modifier = Modifier.size(36.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp)
+                            .padding(horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.width(4.dp))
-
-                    Icon(
-                        imageVector = Icons.Default.PlayCircle,
-                        contentDescription = "YouTube",
-                        tint = BrandRed,
-                        modifier = Modifier.size(20.dp)
-                    )
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    Text(
-                        text = if (pageTitle.isNotBlank() && pageTitle != "YouTube") pageTitle else "ইউটিউব (YouTube)",
-                        color = TextPrimary,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-
-                    if (detectedWatchUrl != null) {
-                        FilledTonalButton(
-                            onClick = {
-                                showResolutionDialog = true
-                                extractionResult = null
-                            },
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = BrandRed,
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(30.dp)
+                        IconButton(
+                            onClick = { activeVideo = null },
+                            modifier = Modifier.size(36.dp)
                         ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(13.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("ডাউনলোড", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = TextPrimary
+                            )
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-
-                    IconButton(
-                        onClick = { webViewInstance?.reload() },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Reload",
-                            tint = TextMuted,
-                            modifier = Modifier.size(18.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = currentVideo.title,
+                            color = TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
                         )
+                        IconButton(
+                            onClick = {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, currentVideo.title)
+                                    putExtra(Intent.EXTRA_TEXT, "Watch on Mukul Plus: ${currentVideo.watchUrl}")
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "শেয়ার করুন"))
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share",
+                                tint = TextMuted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
-            }
 
-            if (isLoadingPage) {
-                LinearProgressIndicator(
+                // Dedicated Player View
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(2.dp),
-                    color = BrandRed,
-                    trackColor = Color.Transparent
-                )
-            }
+                        .height(230.dp)
+                        .background(Color.Black)
+                ) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxSize(),
+                        factory = { ctx ->
+                            WebView(ctx).apply {
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                settings.mediaPlaybackRequiresUserGesture = false
+                                settings.loadWithOverviewMode = true
+                                settings.useWideViewPort = true
+                                settings.cacheMode = WebSettings.LOAD_DEFAULT
 
-            // WebView Box Container
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        WebView(ctx).apply {
-                            webViewInstance = this
-                            isVerticalScrollBarEnabled = false
-                            isHorizontalScrollBarEnabled = false
-                            isNestedScrollingEnabled = false
-                            overScrollMode = android.view.View.OVER_SCROLL_NEVER
-
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.databaseEnabled = true
-                            settings.loadWithOverviewMode = true
-                            settings.useWideViewPort = true
-                            settings.mediaPlaybackRequiresUserGesture = false
-                            settings.allowFileAccess = true
-
-                            addJavascriptInterface(
-                                YouTubeWebAppInterface { url ->
-                                    post { handleUrlUpdate(url) }
-                                },
-                                "AndroidYouTube"
-                            )
-
-                            webViewClient = object : WebViewClient() {
-                                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                                    super.onPageStarted(view, url, favicon)
-                                    isLoadingPage = true
-                                    handleUrlUpdate(url)
-                                }
-
-                                override fun onPageFinished(view: WebView?, url: String?) {
-                                    super.onPageFinished(view, url)
-                                    isLoadingPage = false
-                                    pageTitle = view?.title ?: "YouTube"
-                                    handleUrlUpdate(url)
-
-                                    // Inject script for smooth scrolling and SPA video detection
-                                    val jsScript = """
-                                        (function() {
-                                            try {
-                                                var style = document.createElement('style');
-                                                style.innerHTML = 'html, body { -webkit-overflow-scrolling: touch !important; overscroll-behavior-x: none !important; touch-action: pan-y !important; }';
-                                                document.head.appendChild(style);
-                                            } catch(e){}
-                                            function report() {
-                                                try {
-                                                    if (window.AndroidYouTube && window.location.href) {
-                                                        window.AndroidYouTube.notifyUrl(window.location.href);
-                                                    }
-                                                } catch(e){}
-                                            }
-                                            report();
-                                            window.addEventListener('yt-navigate-finish', report);
-                                            window.addEventListener('popstate', report);
-                                            window.addEventListener('hashchange', report);
-                                            setInterval(report, 1000);
-                                        })();
-                                    """.trimIndent()
-                                    view?.evaluateJavascript(jsScript, null)
-                                }
-
-                                override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
-                                    super.doUpdateVisitedHistory(view, url, isReload)
-                                    handleUrlUpdate(url)
-                                }
-
-                                override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                    val reqUrl = request?.url?.toString().orEmpty()
-                                    if (reqUrl.startsWith("http://") || reqUrl.startsWith("https://")) {
-                                        handleUrlUpdate(reqUrl)
+                                webChromeClient = WebChromeClient()
+                                webViewClient = object : WebViewClient() {
+                                    override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
                                         return false
                                     }
-                                    return true
                                 }
+
+                                val htmlData = """
+                                    <!DOCTYPE html>
+                                    <html>
+                                    <head>
+                                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                        <style>
+                                            * { margin:0; padding:0; box-sizing:border-box; }
+                                            body, html { width:100%; height:100%; background:#000000; overflow:hidden; }
+                                            iframe { width:100%; height:100%; border:none; }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <iframe 
+                                            src="https://www.youtube-nocookie.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&rel=0&modestbranding=1" 
+                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                                            allowfullscreen>
+                                        </iframe>
+                                    </body>
+                                    </html>
+                                """.trimIndent()
+
+                                loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
                             }
-
-                            webChromeClient = object : WebChromeClient() {
-                                override fun onReceivedTitle(view: WebView?, title: String?) {
-                                    super.onReceivedTitle(view, title)
-                                    if (!title.isNullOrBlank()) {
-                                        pageTitle = title
-                                    }
-                                }
-
-                                override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                                    super.onProgressChanged(view, newProgress)
-                                    isLoadingPage = newProgress < 100
-                                }
-                            }
-
-                            loadUrl(YOUTUBE_HOME_URL)
+                        },
+                        update = { webView ->
+                            val htmlData = """
+                                <!DOCTYPE html>
+                                <html>
+                                <head>
+                                    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                    <style>
+                                        * { margin:0; padding:0; box-sizing:border-box; }
+                                        body, html { width:100%; height:100%; background:#000000; overflow:hidden; }
+                                        iframe { width:100%; height:100%; border:none; }
+                                    </style>
+                                </head>
+                                <body>
+                                    <iframe 
+                                        src="https://www.youtube-nocookie.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&rel=0&modestbranding=1" 
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                                        allowfullscreen>
+                                    </iframe>
+                                </body>
+                                </html>
+                            """.trimIndent()
+                            webView.loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
                         }
-                    },
-                    update = {
-                        // Keep instance updated
-                        webViewInstance = it
-                    }
-                )
+                    )
+                }
 
-                // FLOATING DOWNLOAD BUTTON (Triggered when video watch URL is detected)
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = detectedWatchUrl != null,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+                // Video Details & Related Videos List
+                LazyColumn(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 12.dp, start = 16.dp, end = 16.dp)
+                        .fillMaxSize()
+                        .weight(1f),
+                    contentPadding = PaddingValues(bottom = 120.dp)
                 ) {
-                    Card(
-                        shape = RoundedCornerShape(24.dp),
-                        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed),
-                        elevation = CardDefaults.cardElevation(8.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
+                    // Video Information Block
+                    item {
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .padding(16.dp)
                         ) {
+                            Text(
+                                text = currentVideo.title,
+                                color = TextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 22.sp
+                            )
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = BrandRed,
-                                    modifier = Modifier.size(34.dp)
+                                if (currentVideo.viewCount.isNotEmpty()) {
+                                    Text(
+                                        text = currentVideo.viewCount,
+                                        color = TextMuted,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                if (currentVideo.publishedTime.isNotEmpty()) {
+                                    Text(
+                                        text = "• ${currentVideo.publishedTime}",
+                                        color = TextMuted,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            // Action Buttons Row (Download, Share, Downloads Page)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Button(
+                                    onClick = {
+                                        targetDownloadVideo = currentVideo
+                                        showResolutionDialog = true
+                                        extractionResult = null
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1.3f).height(42.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            Icons.Default.PlayArrow,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
+                                    Icon(
+                                        imageVector = Icons.Default.CloudDownload,
+                                        contentDescription = "Download",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "ডাউনলোড",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                OutlinedButton(
+                                    onClick = onNavigateToDownloads,
+                                    shape = RoundedCornerShape(12.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
+                                    modifier = Modifier.weight(1f).height(42.dp),
+                                    contentPadding = PaddingValues(horizontal = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Folder,
+                                        contentDescription = null,
+                                        tint = CyanAccent,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "ডাউনলোডস",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            // Channel Information Card
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = CinemaSurface,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .clip(CircleShape)
+                                            .background(BrandRedDark),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = currentVideo.channelTitle.take(1).uppercase(),
+                                            color = Color.White,
+                                            fontSize = 18.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(12.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = currentVideo.channelTitle,
+                                            color = TextPrimary,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1
+                                        )
+                                        Text(
+                                            text = "অফিসিয়াল ইউটিউব চ্যানেল",
+                                            color = TextMuted,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = BrandRed.copy(alpha = 0.15f),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed.copy(alpha = 0.4f))
+                                    ) {
+                                        Text(
+                                            text = "ইউটিউব ভেরিফাইড",
+                                            color = BrandRedLight,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "ভিডিও সনাক্ত হয়েছে",
-                                        color = TextPrimary,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "রেজুলেশন নির্বাচন করে ডাউনলোড করুন",
-                                        color = CyanAccent,
-                                        fontSize = 10.sp
-                                    )
-                                }
                             }
+                        }
+                    }
 
-                            Button(
-                                onClick = {
+                    // Related Videos Header
+                    item {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                            HorizontalDivider(color = CinemaBorder, thickness = 1.dp)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "সম্পর্কিত আরও ভিডিও (Recommended)",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Related Videos List
+                    if (isLoadingRelated) {
+                        item {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(color = BrandRed, modifier = Modifier.size(32.dp))
+                            }
+                        }
+                    } else {
+                        items(relatedVideos) { relVideo ->
+                            YouTubeVideoRowItem(
+                                video = relVideo,
+                                onPlayClick = { openVideo(relVideo) },
+                                onDownloadClick = {
+                                    targetDownloadVideo = relVideo
                                     showResolutionDialog = true
                                     extractionResult = null
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                                shape = RoundedCornerShape(18.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.CloudDownload,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "ডাউনলোড",
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
+                                }
+                            )
                         }
                     }
                 }
             }
-
-            // ACTIVE DOWNLOAD MINI BANNER
-            if (activeYouTubeTask != null) {
+        } else {
+            // ==============================================================
+            // 2. MAIN BROWSE / SEARCH PAGE
+            // ==============================================================
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(CinemaBackground)
+            ) {
+                // Top Header with Search Box
                 Surface(
-                    color = CinemaSurfaceVariant,
+                    color = CinemaSurface,
+                    tonalElevation = 4.dp,
+                    modifier = Modifier.fillMaxWidth().statusBarsPadding()
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (onBack != null) {
+                                Surface(
+                                    onClick = onBack,
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = CinemaSurfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                    modifier = Modifier.size(46.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Back",
+                                            tint = TextPrimary
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Custom Search Input
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = CinemaBackground,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                modifier = Modifier.weight(1f).height(48.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        tint = BrandRed,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    TextField(
+                                        value = searchQuery,
+                                        onValueChange = { searchQuery = it },
+                                        placeholder = {
+                                            Text(
+                                                "ইউটিউব ভিডিও খুঁজুন (গান, নাটক, খবর)...",
+                                                color = TextMuted,
+                                                fontSize = 12.5.sp
+                                            )
+                                        },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                        keyboardActions = KeyboardActions(
+                                            onSearch = {
+                                                if (searchQuery.isNotBlank()) {
+                                                    loadFeed(query = searchQuery)
+                                                }
+                                            }
+                                        ),
+                                        colors = TextFieldDefaults.colors(
+                                            focusedContainerColor = Color.Transparent,
+                                            unfocusedContainerColor = Color.Transparent,
+                                            focusedIndicatorColor = Color.Transparent,
+                                            unfocusedIndicatorColor = Color.Transparent,
+                                            focusedTextColor = TextPrimary,
+                                            unfocusedTextColor = TextPrimary
+                                        ),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = {
+                                                searchQuery = ""
+                                                loadFeed(selectedCategory)
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Clear,
+                                                contentDescription = "Clear",
+                                                tint = TextMuted,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Go to Downloads Folder Button
+                            IconButton(
+                                onClick = onNavigateToDownloads,
+                                modifier = Modifier.size(46.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = CinemaSurfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.FolderSpecial,
+                                            contentDescription = "Downloads",
+                                            tint = CyanAccent,
+                                            modifier = Modifier.size(22.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Category Chips Row
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            items(categories) { cat ->
+                                val isSelected = selectedCategory == cat.id && searchQuery.isBlank()
+                                Surface(
+                                    onClick = {
+                                        searchQuery = ""
+                                        selectedCategory = cat.id
+                                        loadFeed(category = cat.id)
+                                    },
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) BrandRed else CinemaSurfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isSelected) BrandRed else CinemaBorder
+                                    )
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = cat.icon,
+                                            contentDescription = null,
+                                            tint = if (isSelected) Color.White else TextMuted,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = cat.title,
+                                            color = if (isSelected) Color.White else TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Video List Content
+                if (isLoadingFeed) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .weight(1f),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = BrandRed)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("ইউটিউব ভিডিও লোড হচ্ছে...", color = TextMuted, fontSize = 13.sp)
+                        }
+                    }
+                } else if (videoList.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .weight(1f)
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.SearchOff,
+                                contentDescription = null,
+                                tint = TextMuted,
+                                modifier = Modifier.size(56.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "কোনো ভিডিও খুঁজে পাওয়া যায়নি",
+                                color = TextPrimary,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "দয়া করে অন্য কোনো শব্দ দিয়ে সার্চ করুন",
+                                color = TextMuted,
+                                fontSize = 13.sp
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    searchQuery = ""
+                                    loadFeed()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("হোম পেজে ফিরুন")
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .weight(1f),
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        items(videoList) { video ->
+                            YouTubeVideoCard(
+                                video = video,
+                                onPlayClick = { openVideo(video) },
+                                onDownloadClick = {
+                                    targetDownloadVideo = video
+                                    showResolutionDialog = true
+                                    extractionResult = null
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // ==============================================================
+        // 3. RESOLUTION SELECTION & DOWNLOAD DIALOG
+        // ==============================================================
+        if (showResolutionDialog && targetDownloadVideo != null) {
+            val videoToDownload = targetDownloadVideo!!
+
+            Dialog(onDismissRequest = {
+                if (!isExtracting) {
+                    showResolutionDialog = false
+                    targetDownloadVideo = null
+                }
+            }) {
+                Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onNavigateToDownloads() }
+                        .padding(vertical = 12.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
                 ) {
-                    Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(18.dp)
+                    ) {
+                        // Dialog Header
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                                CircularProgressIndicator(
-                                    progress = { activeYouTubeTask!!.progressPercent / 100f },
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = BrandRed
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = activeYouTubeTask!!.title,
-                                    color = TextPrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
                             Text(
-                                text = "${activeYouTubeTask!!.progressPercent}% (${activeYouTubeTask!!.speedText})",
-                                color = CyanAccent,
-                                fontSize = 10.sp,
+                                text = if (extractionResult != null) "ভিডিও প্রস্তুত!" else "রেজুলেশন নির্বাচন করুন",
+                                color = TextPrimary,
+                                fontSize = 16.sp,
                                 fontWeight = FontWeight.Bold
                             )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { activeYouTubeTask!!.progressPercent / 100f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(3.dp)
-                                .clip(RoundedCornerShape(1.5.dp)),
-                            color = BrandRed,
-                            trackColor = CinemaBorder
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    // RESOLUTION SELECTION & EXTRACTION DIALOG
-    if (showResolutionDialog) {
-        Dialog(onDismissRequest = {
-            if (!isExtracting) {
-                showResolutionDialog = false
-            }
-        }) {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (extractionResult != null) "ভিডিও প্রস্তুত!" else "রেজুলেশন নির্বাচন করুন",
-                            color = TextPrimary,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        IconButton(
-                            onClick = {
-                                extractionJob?.cancel()
-                                isExtracting = false
-                                showResolutionDialog = false
-                            },
-                            modifier = Modifier.size(28.dp)
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    if (isExtracting) {
-                        // EXTRACTION IN PROGRESS
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            CircularProgressIndicator(
-                                color = BrandRed,
-                                modifier = Modifier.size(42.dp)
-                            )
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Text(
-                                text = extractionStatus.ifEmpty { "ডাউনলোড লিঙ্ক তৈরি করা হচ্ছে..." },
-                                color = TextPrimary,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "সার্ভার থেকে ভিডিও ফাইল এনকোড হচ্ছে, কিছুটা সময় লাগতে পারে...",
-                                color = TextMuted,
-                                fontSize = 10.sp
-                            )
-                            Spacer(modifier = Modifier.height(14.dp))
-                            OutlinedButton(
+                            IconButton(
                                 onClick = {
                                     extractionJob?.cancel()
                                     isExtracting = false
+                                    showResolutionDialog = false
+                                    targetDownloadVideo = null
                                 },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = BrandRedLight)
+                                modifier = Modifier.size(28.dp)
                             ) {
-                                Text("বাতিল করুন", fontSize = 11.sp)
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
                             }
                         }
-                    } else if (extractionResult != null) {
-                        // EXTRACTION COMPLETED - READY TO PLAY OR DOWNLOAD
-                        val res = extractionResult!!
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Target Video Preview
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(CinemaSurfaceVariant, RoundedCornerShape(12.dp))
+                                .padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(videoToDownload.thumbnailUrl)
+                                    .crossfade(true)
+                                    .build(),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .size(70.dp, 44.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = videoToDownload.title,
+                                    color = TextPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = videoToDownload.channelTitle,
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Extraction Progress
+                        if (isExtracting) {
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(CinemaSurfaceVariant, RoundedCornerShape(8.dp))
-                                    .padding(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(vertical = 12.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                if (res.thumbnail.isNotEmpty()) {
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(context)
-                                            .data(res.thumbnail)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = null,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier
-                                            .size(54.dp, 40.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                }
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = res.title,
-                                        color = TextPrimary,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = "কোয়ালিটি: ${res.format} • প্রস্তুত",
-                                        color = Color(0xFF10B981),
-                                        fontSize = 10.sp
-                                    )
-                                }
+                                CircularProgressIndicator(color = BrandRed, modifier = Modifier.size(36.dp))
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = extractionStatus.ifEmpty { "ডাউনলোড লিঙ্ক তৈরি করা হচ্ছে..." },
+                                    color = TextPrimary,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "অনুগ্রহ করে কয়েক সেকেন্ড অপেক্ষা করুন",
+                                    color = TextMuted,
+                                    fontSize = 10.5.sp
+                                )
                             }
-
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Action Buttons
-                            Row(
+                        } else if (extractionResult != null) {
+                            // Extraction Success State
+                            val res = extractionResult!!
+                            Column(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalAlignment = Alignment.CenterHorizontally
                             ) {
-                                // Direct Play Button
-                                OutlinedButton(
-                                    onClick = {
-                                        showResolutionDialog = false
-                                        activePlayTitle = res.title
-                                        activePlayUrl = res.downloadUrl
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanAccent)
+                                Surface(
+                                    shape = CircleShape,
+                                    color = Color(0xFF10B981).copy(alpha = 0.2f),
+                                    modifier = Modifier.size(48.dp)
                                 ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("প্লে করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = Color(0xFF10B981),
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
                                 }
 
-                                // In-App Download Button
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                Text(
+                                    text = "সরাসরি ডাউনলোড শুরু করুন",
+                                    color = TextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Spacer(modifier = Modifier.height(16.dp))
+
                                 Button(
                                     onClick = {
-                                        showResolutionDialog = false
                                         val taskId = InAppDownloader.startDownload(
                                             context = context,
                                             movieSlug = "yt_${res.videoId}",
-                                            title = res.title,
-                                            poster = res.thumbnail,
+                                            title = videoToDownload.title,
+                                            poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
                                             quality = res.format,
                                             downloadUrl = res.downloadUrl
                                         )
-                                        Toast.makeText(
-                                            context,
-                                            "অ্যাপে ডাউনলোড শুরু হয়েছে! 'ডাউনলোড' ট্যাবে দেখতে পাবেন।",
-                                            Toast.LENGTH_LONG
-                                        ).show()
+                                        Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখুন", Toast.LENGTH_LONG).show()
+                                        showResolutionDialog = false
+                                        targetDownloadVideo = null
                                     },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed)
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().height(44.dp)
                                 ) {
-                                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.White)
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("ডাউনলোড", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("এখনই ডাউনলোড শুরু করুন", fontWeight = FontWeight.Bold)
                                 }
                             }
-                        }
-                    } else {
-                        // RESOLUTION LIST
-                        Text(
-                            text = "আপনার পছন্দের রেজুলেশনে ক্লিক করুন:",
-                            color = TextMuted,
-                            fontSize = 11.sp
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        } else {
+                            // Resolutions List
+                            Text(
+                                text = "পছন্দের রেজুলেশন ট্যাপ করুন:",
+                                color = TextMuted,
+                                fontSize = 11.5.sp,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
 
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 360.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            items(YouTubeDownloaderHelper.availableResolutions) { res ->
-                                Surface(
-                                    color = CinemaSurfaceVariant,
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            val targetUrl = detectedWatchUrl ?: currentUrl
+                            LazyColumn(
+                                modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(YouTubeDownloaderHelper.availableResolutions) { resItem ->
+                                    Surface(
+                                        onClick = {
                                             isExtracting = true
-                                            extractionStatus = "সার্ভার শুরু হচ্ছে..."
+                                            extractionStatus = "${resItem.title} প্রসেস করা হচ্ছে..."
                                             extractionJob = coroutineScope.launch {
-                                                val result = YouTubeDownloaderHelper.extractDownloadUrl(
-                                                    youtubeUrl = targetUrl,
-                                                    format = res.format,
-                                                    onProgressStatus = { status ->
-                                                        extractionStatus = status
-                                                    }
+                                                val extractResult = YouTubeDownloaderHelper.extractDownloadUrl(
+                                                    youtubeUrl = videoToDownload.watchUrl,
+                                                    format = resItem.format,
+                                                    onProgressStatus = { extractionStatus = it }
                                                 )
                                                 isExtracting = false
-                                                result.onSuccess { extracted ->
-                                                    extractionResult = extracted
-                                                }.onFailure { err ->
-                                                    Toast.makeText(
-                                                        context,
-                                                        err.message ?: "ডাউনলোড লিঙ্ক জেনারেট ব্যর্থ হয়েছে",
-                                                        Toast.LENGTH_LONG
-                                                    ).show()
+                                                if (extractResult.isSuccess) {
+                                                    extractionResult = extractResult.getOrNull()
+                                                } else {
+                                                    val err = extractResult.exceptionOrNull()?.message ?: "ডাউনলোড লিঙ্ক তৈরি করতে ব্যর্থ হয়েছে"
+                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
                                                 }
                                             }
-                                        }
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        color = CinemaSurfaceVariant,
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             Icon(
-                                                imageVector = if (res.isAudio) Icons.Default.MusicNote else Icons.Default.Videocam,
+                                                imageVector = if (resItem.isAudio) Icons.Default.MusicNote else Icons.Default.VideoLibrary,
                                                 contentDescription = null,
-                                                tint = if (res.isAudio) CyanAccent else BrandRed,
-                                                modifier = Modifier.size(18.dp)
+                                                tint = if (resItem.isAudio) GoldRating else BrandRed,
+                                                modifier = Modifier.size(20.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column {
+                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
                                                 Text(
-                                                    text = res.title,
+                                                    text = resItem.title,
                                                     color = TextPrimary,
                                                     fontSize = 13.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
                                                 Text(
-                                                    text = res.subtitle,
+                                                    text = resItem.subtitle,
                                                     color = TextMuted,
-                                                    fontSize = 10.sp
+                                                    fontSize = 11.sp
                                                 )
                                             }
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowForwardIos,
+                                                contentDescription = null,
+                                                tint = TextMuted,
+                                                modifier = Modifier.size(12.dp)
+                                            )
                                         }
-
-                                        Icon(
-                                            Icons.Default.ArrowForwardIos,
-                                            contentDescription = null,
-                                            tint = TextMuted,
-                                            modifier = Modifier.size(14.dp)
-                                        )
                                     }
                                 }
                             }
@@ -779,60 +992,262 @@ fun YouTubeScreen(
             }
         }
     }
+}
 
-    // MANUAL YOUTUBE URL SEARCH / PASTE DIALOG
-    if (showUrlInputDialog) {
-        AlertDialog(
-            onDismissRequest = { showUrlInputDialog = false },
-            title = {
-                Text("ইউটিউব লিঙ্ক বা সার্চ", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column {
-                    Text(
-                        "ইউটিউবের কোনো ভিডিও লিঙ্ক পেস্ট করুন অথবা সার্চ করার জন্য টেক্সট লিখুন:",
-                        color = TextMuted,
-                        fontSize = 11.sp
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = manualUrlInput,
-                        onValueChange = { manualUrlInput = it },
-                        placeholder = { Text("https://youtu.be/... বা সার্চ লিখুন", fontSize = 11.sp) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = BrandRed,
-                            unfocusedBorderColor = CinemaBorder
+/**
+ * Modern Full-width YouTube Video Card for Feed
+ */
+@Composable
+private fun YouTubeVideoCard(
+    video: YouTubeVideoItem,
+    onPlayClick: () -> Unit,
+    onDownloadClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = CinemaSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .clickable(onClick = onPlayClick)
+    ) {
+        Column {
+            // Thumbnail container with Duration Badge
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp)
+                    .background(CinemaSurfaceVariant)
+            ) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Dark gradient at bottom
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f))
+                            )
                         )
+                )
+
+                // Play Button Overlay
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .align(Alignment.Center)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.65f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play",
+                        tint = Color.White,
+                        modifier = Modifier.size(30.dp)
                     )
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val input = manualUrlInput.trim()
-                        if (input.isNotEmpty()) {
-                            val finalUrl = when {
-                                input.startsWith("http://") || input.startsWith("https://") -> input
-                                else -> "https://m.youtube.com/results?search_query=" + java.net.URLEncoder.encode(input, "UTF-8")
-                            }
-                            webViewInstance?.loadUrl(finalUrl)
-                            handleUrlUpdate(finalUrl)
-                        }
-                        showUrlInputDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed)
+
+                // Duration Badge
+                if (video.duration.isNotEmpty()) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = video.duration,
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            // Info and Action Buttons
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = video.title,
+                    color = TextPrimary,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 19.sp
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("খুলুন", color = Color.White, fontSize = 12.sp)
+                    // Channel & Views Info
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = video.channelTitle,
+                            color = TextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (video.viewCount.isNotEmpty()) {
+                                Text(
+                                    text = video.viewCount,
+                                    color = TextMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            if (video.publishedTime.isNotEmpty()) {
+                                Text(
+                                    text = "• ${video.publishedTime}",
+                                    color = TextMuted,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // Direct Action Buttons: Play & Download
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(
+                            onClick = onPlayClick,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = CinemaSurfaceVariant,
+                                contentColor = TextPrimary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("প্লে", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = onDownloadClick,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("ডাউনলোড", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showUrlInputDialog = false }) {
-                    Text("বাতিল", color = TextMuted, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+/**
+ * Compact Video Row Item (used for related videos in player page)
+ */
+@Composable
+private fun YouTubeVideoRowItem(
+    video: YouTubeVideoItem,
+    onPlayClick: () -> Unit,
+    onDownloadClick: () -> Unit
+) {
+    Surface(
+        onClick = onPlayClick,
+        shape = RoundedCornerShape(14.dp),
+        color = CinemaSurface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Thumbnail
+            Box(
+                modifier = Modifier
+                    .size(90.dp, 56.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(CinemaSurfaceVariant)
+            ) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (video.duration.isNotEmpty()) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                    ) {
+                        Text(
+                            text = video.duration,
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
                 }
-            },
-            containerColor = CinemaSurface
-        )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Text info
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = video.title,
+                    color = TextPrimary,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 17.sp
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = video.channelTitle,
+                    color = TextMuted,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
+            }
+
+            IconButton(
+                onClick = onDownloadClick,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CloudDownload,
+                    contentDescription = "Download",
+                    tint = BrandRed,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+        }
     }
 }

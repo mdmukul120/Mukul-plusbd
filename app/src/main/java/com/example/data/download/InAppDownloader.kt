@@ -88,27 +88,45 @@ object InAppDownloader {
     /**
      * Scan downloaded files on disk to populate completedDownloads
      */
+    fun scanFiles(context: Context) {
+        coroutineScope.launch {
+            scanExistingFiles(context)
+        }
+    }
+
     private fun scanExistingFiles(context: Context) {
         val dir = getDownloadDirectory(context)
-        val files = dir.listFiles { f -> f.isFile && (f.name.endsWith(".mp4") || f.name.endsWith(".mkv")) } ?: return
+        val files = dir.listFiles { f ->
+            if (!f.isFile) return@listFiles false
+            val n = f.name.lowercase()
+            n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".webm") || n.endsWith(".m4a") || n.endsWith(".mp3")
+        } ?: return
+
+        val existingMap = _completedDownloads.value.associateBy { it.filePath }
         val list = mutableListOf<DownloadTask>()
+
         for (f in files) {
-            val name = f.nameWithoutExtension
-            val task = DownloadTask(
-                id = f.name,
-                movieSlug = name,
-                title = name.replace("_", " "),
-                poster = "",
-                quality = if (f.name.contains("1080")) "1080p" else if (f.name.contains("720")) "720p" else "480p",
-                downloadUrl = "",
-                status = DownloadStatus.COMPLETED,
-                progress = 1.0f,
-                downloadedBytes = f.length(),
-                totalBytes = f.length(),
-                speedText = "ডাউনলোড সম্পন্ন",
-                filePath = f.absolutePath
-            )
-            list.add(task)
+            val existing = existingMap[f.absolutePath]
+            if (existing != null) {
+                list.add(existing)
+            } else {
+                val name = f.nameWithoutExtension
+                val task = DownloadTask(
+                    id = f.name,
+                    movieSlug = name,
+                    title = name.replace("_", " "),
+                    poster = "",
+                    quality = if (f.name.contains("1080")) "1080p" else if (f.name.contains("720")) "720p" else "480p",
+                    downloadUrl = "",
+                    status = DownloadStatus.COMPLETED,
+                    progress = 1.0f,
+                    downloadedBytes = f.length(),
+                    totalBytes = f.length(),
+                    speedText = "ডাউনলোড সম্পন্ন",
+                    filePath = f.absolutePath
+                )
+                list.add(task)
+            }
         }
         _completedDownloads.value = list
     }

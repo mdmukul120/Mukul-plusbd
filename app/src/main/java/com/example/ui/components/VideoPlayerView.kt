@@ -31,6 +31,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -120,7 +121,8 @@ fun VideoPlayerView(
             .setConnectTimeoutMs(15000)
             .setReadTimeoutMs(25000)
 
-        val mediaSourceFactory = DefaultMediaSourceFactory(httpDataSourceFactory)
+        val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
 
         ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
@@ -128,7 +130,8 @@ fun VideoPlayerView(
                 playWhenReady = true
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
                 try {
-                    val isHls = playableUrl.contains(".m3u8", ignoreCase = true) ||
+                    val isLocalFile = playableUrl.startsWith("/") || playableUrl.startsWith("file:")
+                    val isHls = !isLocalFile && (playableUrl.contains(".m3u8", ignoreCase = true) ||
                         playableUrl.contains(".m3u", ignoreCase = true) ||
                         playableUrl.contains("/px/hls", ignoreCase = true) ||
                         playableUrl.contains("bongo/hls", ignoreCase = true) ||
@@ -136,10 +139,16 @@ fun VideoPlayerView(
                         playableUrl.contains("workers.dev", ignoreCase = true) ||
                         playableUrl.contains("aynaott", ignoreCase = true) ||
                         playableUrl.contains("live", ignoreCase = true) ||
-                        playableUrl.contains("hridoytv", ignoreCase = true)
+                        playableUrl.contains("hridoytv", ignoreCase = true))
+
+                    val mediaUri = if (isLocalFile) {
+                        if (playableUrl.startsWith("file:")) Uri.parse(playableUrl) else Uri.fromFile(java.io.File(playableUrl))
+                    } else {
+                        Uri.parse(playableUrl)
+                    }
 
                     val mediaItem = MediaItem.Builder()
-                        .setUri(Uri.parse(playableUrl))
+                        .setUri(mediaUri)
                         .apply {
                             if (isHls) {
                                 setMimeType(MimeTypes.APPLICATION_M3U8)

@@ -41,6 +41,7 @@ fun ExtractorScreen(
 
     LaunchedEffect(Unit) {
         InAppDownloader.init(context)
+        InAppDownloader.scanFiles(context)
     }
 
     val allTasks by InAppDownloader.tasks.collectAsState()
@@ -415,8 +416,20 @@ fun ExtractorScreen(
                                 // Play Button
                                 FilledTonalButton(
                                     onClick = {
-                                        activePlayFilePath = task.filePath
-                                        activePlayTitle = task.title
+                                        val file = java.io.File(task.filePath)
+                                        val resolvedPath = if (file.exists() && file.length() > 0) {
+                                            task.filePath
+                                        } else {
+                                            val fallbackFile = java.io.File(InAppDownloader.getDownloadDirectory(context), task.id)
+                                            if (fallbackFile.exists() && fallbackFile.length() > 0) fallbackFile.absolutePath else null
+                                        }
+
+                                        if (resolvedPath != null) {
+                                            activePlayFilePath = resolvedPath
+                                            activePlayTitle = task.title
+                                        } else {
+                                            Toast.makeText(context, "অফলাইন ভিডিও ফাইলটি পাওয়া যায়নি বা ক্ষতিগ্রস্ত হয়েছে", Toast.LENGTH_SHORT).show()
+                                        }
                                     },
                                     colors = ButtonDefaults.filledTonalButtonColors(
                                         containerColor = BrandRed,
