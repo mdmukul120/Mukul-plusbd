@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -38,6 +39,7 @@ import com.example.ui.theme.*
 fun LiveTvScreen(
     mediaRepository: MediaRepository,
     initialChannel: TvChannel? = null,
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -120,34 +122,64 @@ fun LiveTvScreen(
 
         // Search & Category Filters
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-            // Channel Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("টিভি চ্যানেল খুঁজুন (Search Live Channel)", color = TextMuted, fontSize = 12.sp) },
-                leadingIcon = {
-                    Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = TextMuted)
-                },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear", tint = TextMuted)
+            // Channel Search Bar with Back Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (onBack != null) {
+                    Surface(
+                        onClick = {
+                            if (activeChannel != null) {
+                                activeChannel = null
+                            } else {
+                                onBack()
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        color = CinemaSurfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                        modifier = Modifier.size(50.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = TextPrimary
+                            )
                         }
                     }
-                },
-                singleLine = true,
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedContainerColor = CinemaSurface,
-                    unfocusedContainerColor = CinemaSurface,
-                    focusedBorderColor = AuthBrandPrimary,
-                    unfocusedBorderColor = CinemaBorder,
-                    focusedTextColor = TextPrimary,
-                    unfocusedTextColor = TextPrimary,
-                    cursorColor = AuthBrandPrimary
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            )
+                }
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("টিভি চ্যানেল খুঁজুন (Search Live Channel)", color = TextMuted, fontSize = 12.sp) },
+                    leadingIcon = {
+                        Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = TextMuted)
+                    },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(imageVector = Icons.Default.Clear, contentDescription = "Clear", tint = TextMuted)
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = CinemaSurface,
+                        unfocusedContainerColor = CinemaSurface,
+                        focusedBorderColor = AuthBrandPrimary,
+                        unfocusedBorderColor = CinemaBorder,
+                        focusedTextColor = TextPrimary,
+                        unfocusedTextColor = TextPrimary,
+                        cursorColor = AuthBrandPrimary
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
             Spacer(modifier = Modifier.height(10.dp))
 

@@ -66,7 +66,7 @@ object ApiClient {
 
     // 1. CtgHall Movies List
     suspend fun fetchCtgMovies(
-        library: Int = 1,
+        library: Int? = 1,
         page: Int = 1,
         sort: String = "createdAt",
         sortOrder: String = "DESC",
@@ -75,16 +75,21 @@ object ApiClient {
         genre: String? = null
     ): CtgMoviesResponse = withContext(Dispatchers.IO) {
         try {
-            var url = "https://www.ctghall.com/api/movies?library=$library&fields=id,title,original_title,year,poster_path,release_date,rating,online_rating&sort=$sort&sort_order=$sortOrder&page=$page"
+            val urlBuilder = StringBuilder("https://www.ctghall.com/api/movies?fields=id,title,original_title,year,poster_path,release_date,rating,online_rating&sort=$sort&sort_order=$sortOrder&page=$page")
+            if (library != null) {
+                urlBuilder.append("&library=$library")
+            }
             if (!search.isNullOrBlank()) {
-                url += "&search=${java.net.URLEncoder.encode(search, "UTF-8")}"
+                val encoded = java.net.URLEncoder.encode(search.trim(), "UTF-8")
+                urlBuilder.append("&title=$encoded&search=$encoded")
             }
             if (year != null && year > 0) {
-                url += "&year=$year"
+                urlBuilder.append("&year=$year")
             }
             if (!genre.isNullOrBlank()) {
-                url += "&genre=${java.net.URLEncoder.encode(genre, "UTF-8")}"
+                urlBuilder.append("&genre=${java.net.URLEncoder.encode(genre, "UTF-8")}")
             }
+            val url = urlBuilder.toString()
 
             val request = Request.Builder()
                 .url(url)
@@ -107,7 +112,7 @@ object ApiClient {
                 val libObj = item.optJSONObject("Library")
                 val lib = if (libObj != null) {
                     CtgLibrary(
-                        id = libObj.optInt("id", library),
+                        id = libObj.optInt("id", library ?: 1),
                         name = libObj.optString("name", "Movies"),
                         type = libObj.optString("type", "MOVIE")
                     )

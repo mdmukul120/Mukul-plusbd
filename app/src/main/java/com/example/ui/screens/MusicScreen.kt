@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,6 +40,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun MusicScreen(
     musicRepository: MusicRepository,
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -110,19 +112,42 @@ fun MusicScreen(
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 90.dp)
+            contentPadding = PaddingValues(bottom = 130.dp)
         ) {
             // 1. Search Bar
             item {
-                Surface(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    color = CinemaSurface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    TextField(
+                    if (onBack != null) {
+                        Surface(
+                            onClick = onBack,
+                            shape = RoundedCornerShape(12.dp),
+                            color = CinemaSurfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = TextPrimary
+                                )
+                            }
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                        color = CinemaSurface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
+                    ) {
+                        TextField(
                         value = searchQuery,
                         onValueChange = {
                             searchQuery = it
@@ -168,6 +193,7 @@ fun MusicScreen(
                     )
                 }
             }
+        }
 
             // 2. Categories Scroll
             item {

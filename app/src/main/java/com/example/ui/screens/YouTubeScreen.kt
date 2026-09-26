@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,6 +51,7 @@ class YouTubeWebAppInterface(private val onUrlChanged: (String) -> Unit) {
 @Composable
 fun YouTubeScreen(
     onNavigateToDownloads: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -85,7 +87,7 @@ fun YouTubeScreen(
     }
 
     // Handle back button
-    BackHandler(enabled = activePlayUrl != null || showResolutionDialog || (webViewInstance?.canGoBack() == true)) {
+    BackHandler(enabled = true) {
         when {
             activePlayUrl != null -> {
                 activePlayUrl = null
@@ -95,6 +97,9 @@ fun YouTubeScreen(
             }
             webViewInstance?.canGoBack() == true -> {
                 webViewInstance?.goBack()
+            }
+            onBack != null -> {
+                onBack()
             }
         }
     }
@@ -163,120 +168,88 @@ fun YouTubeScreen(
                 .fillMaxSize()
                 .background(CinemaBackground)
         ) {
-            // YouTube Header Bar
+            // Minimal Top Bar with Back, Refresh & Title (No browser URL bar)
             Surface(
                 color = CinemaSurface,
                 tonalElevation = 2.dp,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().statusBarsPadding()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(44.dp)
-                        .padding(horizontal = 6.dp),
+                        .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Back button: navigates web history or goes back in app
                     IconButton(
                         onClick = {
                             if (webViewInstance?.canGoBack() == true) {
                                 webViewInstance?.goBack()
+                            } else if (onBack != null) {
+                                onBack()
                             }
                         },
-                        enabled = webViewInstance?.canGoBack() == true,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back",
-                            tint = if (webViewInstance?.canGoBack() == true) TextPrimary else TextMuted,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            if (webViewInstance?.canGoForward() == true) {
-                                webViewInstance?.goForward()
-                            }
-                        },
-                        enabled = webViewInstance?.canGoForward() == true,
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.ArrowForward,
-                            contentDescription = "Forward",
-                            tint = if (webViewInstance?.canGoForward() == true) TextPrimary else TextMuted,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            webViewInstance?.loadUrl(YOUTUBE_HOME_URL)
-                        },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Home,
-                            contentDescription = "YouTube Home",
-                            tint = BrandRed,
-                            modifier = Modifier.size(18.dp)
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
                     Spacer(modifier = Modifier.width(4.dp))
 
-                    Surface(
-                        color = CinemaSurfaceVariant,
-                        shape = RoundedCornerShape(16.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(28.dp)
-                            .clickable { showUrlInputDialog = true }
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp)
+                    Icon(
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = "YouTube",
+                        tint = BrandRed,
+                        modifier = Modifier.size(20.dp)
+                    )
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    Text(
+                        text = if (pageTitle.isNotBlank() && pageTitle != "YouTube") pageTitle else "ইউটিউব (YouTube)",
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    if (detectedWatchUrl != null) {
+                        FilledTonalButton(
+                            onClick = {
+                                showResolutionDialog = true
+                                extractionResult = null
+                            },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = BrandRed,
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
                         ) {
-                            Icon(
-                                Icons.Default.Search,
-                                contentDescription = null,
-                                tint = TextMuted,
-                                modifier = Modifier.size(14.dp)
-                            )
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(13.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = if (detectedWatchUrl != null) "ভিডিও প্রস্তুত (ডাউনলোড করুন)" else "m.youtube.com",
-                                color = if (detectedWatchUrl != null) Color(0xFF10B981) else TextMuted,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
+                            Text("ডাউনলোড", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
+                        Spacer(modifier = Modifier.width(4.dp))
                     }
-
-                    Spacer(modifier = Modifier.width(4.dp))
 
                     IconButton(
                         onClick = { webViewInstance?.reload() },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
-                            Icons.Default.Refresh,
+                            imageVector = Icons.Default.Refresh,
                             contentDescription = "Reload",
-                            tint = TextPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-
-                    IconButton(
-                        onClick = { onNavigateToDownloads() },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.CloudDownload,
-                            contentDescription = "Downloads",
-                            tint = CyanAccent,
+                            tint = TextMuted,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -304,6 +277,11 @@ fun YouTubeScreen(
                     factory = { ctx ->
                         WebView(ctx).apply {
                             webViewInstance = this
+                            isVerticalScrollBarEnabled = false
+                            isHorizontalScrollBarEnabled = false
+                            isNestedScrollingEnabled = false
+                            overScrollMode = android.view.View.OVER_SCROLL_NEVER
+
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.databaseEnabled = true
@@ -332,9 +310,14 @@ fun YouTubeScreen(
                                     pageTitle = view?.title ?: "YouTube"
                                     handleUrlUpdate(url)
 
-                                    // Inject script for SPA video detection
+                                    // Inject script for smooth scrolling and SPA video detection
                                     val jsScript = """
                                         (function() {
+                                            try {
+                                                var style = document.createElement('style');
+                                                style.innerHTML = 'html, body { -webkit-overflow-scrolling: touch !important; overscroll-behavior-x: none !important; touch-action: pan-y !important; }';
+                                                document.head.appendChild(style);
+                                            } catch(e){}
                                             function report() {
                                                 try {
                                                     if (window.AndroidYouTube && window.location.href) {

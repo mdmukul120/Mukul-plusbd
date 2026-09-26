@@ -57,6 +57,7 @@ enum class OttFilterType {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MukulOttScreen(
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -235,9 +236,13 @@ fun MukulOttScreen(
     }
 
     // Hardware back press handler
-    BackHandler(enabled = selectedMovieSlug != null) {
-        selectedMovieSlug = null
-        activePlayUrl = null
+    BackHandler(enabled = true) {
+        if (selectedMovieSlug != null) {
+            selectedMovieSlug = null
+            activePlayUrl = null
+        } else if (onBack != null) {
+            onBack()
+        }
     }
 
     Box(
@@ -1076,37 +1081,61 @@ fun MukulOttScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
-                        // Search Box (1-200 pages deep search)
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            placeholder = { Text("১-২০০ পেজের সব মুভি ও সিরিজ খুঁজুন...", fontSize = 12.sp, color = TextMuted) },
-                            leadingIcon = {
-                                Icon(Icons.Default.Search, contentDescription = null, tint = BrandRed, modifier = Modifier.size(18.dp))
-                            },
-                            trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(onClick = { searchQuery = "" }) {
-                                        Icon(Icons.Default.Close, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
+                        // Search Box (1-200 pages deep search) with Back button
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (onBack != null) {
+                                Surface(
+                                    onClick = onBack,
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = CinemaSurfaceVariant,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Back",
+                                            tint = TextPrimary
+                                        )
                                     }
                                 }
-                            },
-                            singleLine = true,
-                            shape = RoundedCornerShape(20.dp),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedContainerColor = CinemaSurfaceVariant,
-                                unfocusedContainerColor = CinemaSurfaceVariant,
-                                focusedBorderColor = BrandRed,
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedTextColor = TextPrimary,
-                                unfocusedTextColor = TextPrimary
-                            ),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp)
-                        )
+                            }
+
+                            OutlinedTextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("১-২০০ পেজের সব মুভি ও সিরিজ খুঁজুন...", fontSize = 12.sp, color = TextMuted) },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Search, contentDescription = null, tint = BrandRed, modifier = Modifier.size(18.dp))
+                                },
+                                trailingIcon = {
+                                    if (searchQuery.isNotEmpty()) {
+                                        IconButton(onClick = { searchQuery = "" }) {
+                                            Icon(Icons.Default.Close, contentDescription = null, tint = TextMuted, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                },
+                                singleLine = true,
+                                shape = RoundedCornerShape(20.dp),
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedContainerColor = CinemaSurfaceVariant,
+                                    unfocusedContainerColor = CinemaSurfaceVariant,
+                                    focusedBorderColor = BrandRed,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    focusedTextColor = TextPrimary,
+                                    unfocusedTextColor = TextPrimary
+                                ),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(44.dp)
+                            )
+                        }
 
                         // Deep Search Status Banner (if active search)
                         if (searchQuery.isNotBlank()) {

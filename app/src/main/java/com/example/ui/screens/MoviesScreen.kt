@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
@@ -34,6 +35,7 @@ import com.example.ui.theme.*
 fun MoviesScreen(
     mediaRepository: MediaRepository,
     onSelectMovie: (Long) -> Unit,
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var movies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
@@ -41,6 +43,7 @@ fun MoviesScreen(
     var currentPage by remember { mutableIntStateOf(1) }
     var totalPages by remember { mutableIntStateOf(1) }
     var searchQuery by remember { mutableStateOf("") }
+    var debouncedQuery by remember { mutableStateOf("") }
 
     // Filter states
     val menusData by mediaRepository.menusData.collectAsState()
@@ -51,35 +54,58 @@ fun MoviesScreen(
     var selectedSort by remember { mutableStateOf("createdAt") }
     var showFilterSheet by remember { mutableStateOf(false) }
 
+    // Debounce search query to avoid firing on every keystroke
+    LaunchedEffect(searchQuery) {
+        if (searchQuery.isBlank()) {
+            debouncedQuery = ""
+        } else {
+            kotlinx.coroutines.delay(300)
+            debouncedQuery = searchQuery.trim()
+        }
+        currentPage = 1
+    }
+
     // Initial load menus
     LaunchedEffect(Unit) {
         mediaRepository.getMenus()
     }
 
-    LaunchedEffect(selectedCategory, isBongoSelected, selectedYear, selectedGenre, selectedSort, currentPage, searchQuery) {
+    LaunchedEffect(selectedCategory, isBongoSelected, selectedYear, selectedGenre, selectedSort, currentPage, debouncedQuery) {
         isLoading = true
         if (isBongoSelected) {
             val allBongo = mediaRepository.getBongoVideos()
-            movies = if (searchQuery.isNotBlank()) {
+            movies = if (debouncedQuery.isNotBlank()) {
                 allBongo.filter {
-                    it.title.contains(searchQuery, ignoreCase = true) ||
-                    (it.casts?.contains(searchQuery, ignoreCase = true) == true) ||
-                    (it.genre?.contains(searchQuery, ignoreCase = true) == true)
+                    it.title.contains(debouncedQuery, ignoreCase = true) ||
+                    (it.casts?.contains(debouncedQuery, ignoreCase = true) == true) ||
+                    (it.genre?.contains(debouncedQuery, ignoreCase = true) == true)
                 }
             } else {
                 allBongo
             }
             totalPages = 1
         } else {
-            val res = ApiClient.fetchCtgMovies(
-                library = selectedCategory?.id ?: 1,
+            val targetLibrary = if (debouncedQuery.isNotBlank() && selectedCategory == null) null else (selectedCategory?.id ?: 1)
+            var res = ApiClient.fetchCtgMovies(
+                library = targetLibrary,
                 page = currentPage,
                 sort = selectedSort,
                 sortOrder = "DESC",
-                search = searchQuery.ifBlank { null },
+                search = debouncedQuery.ifBlank { null },
                 year = selectedYear,
                 genre = selectedGenre
             )
+            if (res.data.isEmpty() && debouncedQuery.isNotBlank() && targetLibrary != null) {
+                res = ApiClient.fetchCtgMovies(
+                    library = null,
+                    page = currentPage,
+                    sort = selectedSort,
+                    sortOrder = "DESC",
+                    search = debouncedQuery.ifBlank { null },
+                    year = selectedYear,
+                    genre = selectedGenre
+                )
+            }
             movies = res.data
             totalPages = res.pages
         }
@@ -98,6 +124,24 @@ fun MoviesScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                if (onBack != null) {
+                    Surface(
+                        onClick = onBack,
+                        shape = RoundedCornerShape(12.dp),
+                        color = CinemaSurfaceVariant,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                        modifier = Modifier.size(50.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back",
+                                tint = TextPrimary
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = {

@@ -268,6 +268,22 @@ object MusicPlayerManager {
         _showFullPlayer.value = false
     }
 
+    fun stop() {
+        try {
+            exoPlayer?.stop()
+            exoPlayer?.clearMediaItems()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping player", e)
+        }
+        stopProgressTracking()
+        _isPlaying.value = false
+        _isBuffering.value = false
+        _currentTrack.value = null
+        _positionMs.value = 0L
+        _durationMs.value = 0L
+        _showFullPlayer.value = false
+    }
+
     fun release() {
         stopProgressTracking()
         exoPlayer?.release()

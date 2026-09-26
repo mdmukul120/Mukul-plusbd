@@ -66,6 +66,13 @@ fun MovieDetailScreen(
     var isPlayingInApp by remember { mutableStateOf(false) }
     var isFullScreen by remember { mutableStateOf(false) }
 
+    // Control bar dropdown states (Mukul OTT style)
+    var showResolutionDropdown by remember { mutableStateOf(false) }
+    var showEpisodeDropdown by remember { mutableStateOf(false) }
+    var showDownloadDropdown by remember { mutableStateOf(false) }
+    var activeQualityLabel by remember { mutableStateOf("1080p") }
+    var activeEpisodeLabel by remember { mutableStateOf("মেইন ভিডিও") }
+
     // Download & Stream Resolution State
     var isResolvingDownload by remember { mutableStateOf(false) }
     var resolvingMessage by remember { mutableStateOf("") }
@@ -77,6 +84,15 @@ fun MovieDetailScreen(
 
     val favorites by mediaRepository.favorites.collectAsState()
     val isFav = movieId != null && favorites.contains(movieId)
+
+    // Handle back button for fullscreen and in-app playing
+    androidx.activity.compose.BackHandler(enabled = isFullScreen || isPlayingInApp) {
+        if (isFullScreen) {
+            isFullScreen = false
+        } else if (isPlayingInApp) {
+            isPlayingInApp = false
+        }
+    }
 
     // Fetch movie details from CtgHall, Extractor, or TMDB
     LaunchedEffect(movieId, extractorLink) {
@@ -217,15 +233,292 @@ fun MovieDetailScreen(
                 // 1. Top Media Player or Hero Poster (Taller player height)
                 item {
                     if (isPlayingInApp && !activeStreamUrl.isNullOrEmpty()) {
-                        VideoPlayerView(
-                            videoUrl = activeStreamUrl!!,
-                            title = displayTitle,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(280.dp),
-                            onFullScreenToggle = { isFullScreen = !isFullScreen },
-                            isFullScreen = isFullScreen
-                        )
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            VideoPlayerView(
+                                videoUrl = activeStreamUrl!!,
+                                title = displayTitle,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(260.dp),
+                                onFullScreenToggle = { isFullScreen = !isFullScreen },
+                                isFullScreen = isFullScreen
+                            )
+
+                            // MUKUL OTT STYLE CONTROL BAR: [ফিরে যান, রেজুলেশন, এপিসোড, ডাউনলোড]
+                            Surface(
+                                color = CinemaSurfaceVariant,
+                                tonalElevation = 4.dp,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    // (১) ফিরে যান বাটন (Small Back Button)
+                                    FilledTonalButton(
+                                        onClick = onBackClick,
+                                        colors = ButtonDefaults.filledTonalButtonColors(
+                                            containerColor = CinemaSurface,
+                                            contentColor = TextPrimary
+                                        ),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                        modifier = Modifier.height(34.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                            contentDescription = "Back",
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        Text(
+                                            text = "ফিরে যান",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+
+                                    // (২) রেজুলেশন বাটন (Resolution Selector Dropdown - ALADA BUTTON)
+                                    Box {
+                                        OutlinedButton(
+                                            onClick = { showResolutionDropdown = true },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = CinemaSurface,
+                                                contentColor = TextPrimary
+                                            ),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(34.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Tune,
+                                                contentDescription = null,
+                                                tint = CyanAccent,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = if (activeQualityLabel.isNotEmpty()) "রেজুলেশন: $activeQualityLabel" else "রেজুলেশন",
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowDropDown,
+                                                contentDescription = null,
+                                                tint = TextSecondary,
+                                                modifier = Modifier.size(15.dp)
+                                            )
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = showResolutionDropdown,
+                                            onDismissRequest = { showResolutionDropdown = false },
+                                            modifier = Modifier.background(CinemaSurface)
+                                        ) {
+                                            Text(
+                                                text = "রেজুলেশন নির্বাচন করুন:",
+                                                color = BrandRed,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                            )
+
+                                            val dlList = extractorInfo?.downloadLinks ?: emptyList()
+                                            val ctgStream = ctgMovie?.getFullStreamUrl()
+
+                                            if (ctgStream != null) {
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text("1080p Full HD (Web-DL)", color = if (activeQualityLabel == "1080p") BrandRed else TextPrimary, fontSize = 12.sp)
+                                                    },
+                                                    onClick = {
+                                                        activeStreamUrl = ctgStream
+                                                        activeQualityLabel = "1080p"
+                                                        showResolutionDropdown = false
+                                                    }
+                                                )
+                                            }
+
+                                            dlList.forEach { dl ->
+                                                val q = dl.quality ?: "HD"
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text("${dl.title} ($q)", color = if (activeQualityLabel == q) BrandRed else TextPrimary, fontSize = 12.sp)
+                                                    },
+                                                    onClick = {
+                                                        activeStreamUrl = dl.link
+                                                        activeQualityLabel = q
+                                                        showResolutionDropdown = false
+                                                    }
+                                                )
+                                            }
+
+                                            if (ctgStream == null && dlList.isEmpty()) {
+                                                DropdownMenuItem(
+                                                    text = { Text("স্ট্যান্ডার্ড HD (Default)", color = TextPrimary, fontSize = 12.sp) },
+                                                    onClick = { showResolutionDropdown = false }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // (৩) এপিসোড বাটন (Episode Selector Dropdown - ALADA BUTTON)
+                                    val hasEpisodes = episodesList.isNotEmpty()
+                                    if (hasEpisodes) {
+                                        Box {
+                                            OutlinedButton(
+                                                onClick = { showEpisodeDropdown = true },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    containerColor = CinemaSurface,
+                                                    contentColor = TextPrimary
+                                                ),
+                                                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(34.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.VideoLibrary,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFFFFB020),
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(3.dp))
+                                                Text(
+                                                    text = activeEpisodeLabel,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Icon(
+                                                    imageVector = Icons.Default.ArrowDropDown,
+                                                    contentDescription = null,
+                                                    tint = TextSecondary,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                            }
+
+                                            DropdownMenu(
+                                                expanded = showEpisodeDropdown,
+                                                onDismissRequest = { showEpisodeDropdown = false },
+                                                modifier = Modifier.background(CinemaSurface)
+                                            ) {
+                                                Text(
+                                                    text = "পর্ব নির্বাচন করুন:",
+                                                    color = BrandRed,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                                )
+                                                episodesList.forEach { ep ->
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            Text(ep.title, color = if (activeEpisodeLabel == ep.title) BrandRed else TextPrimary, fontSize = 12.sp)
+                                                        },
+                                                        onClick = {
+                                                            activeStreamUrl = ep.link
+                                                            activeEpisodeLabel = ep.title
+                                                            showEpisodeDropdown = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.weight(1f))
+
+                                    // (৪) ডাউনলোড বাটন (Download Button with Direct Resolution Dropdown)
+                                    Box {
+                                        Button(
+                                            onClick = { showDownloadDropdown = true },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = BrandRed,
+                                                contentColor = Color.White
+                                            ),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(34.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Download,
+                                                contentDescription = "Download",
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "ডাউনলোড",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Icon(
+                                                imageVector = Icons.Default.ArrowDropDown,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = showDownloadDropdown,
+                                            onDismissRequest = { showDownloadDropdown = false },
+                                            modifier = Modifier.background(CinemaSurface)
+                                        ) {
+                                            Text(
+                                                text = "ডাউনলোড রেজুলেশন পছন্দ করুন:",
+                                                color = BrandRed,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                            )
+
+                                            val ctgStream = ctgMovie?.getFullStreamUrl()
+                                            if (ctgStream != null) {
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text("1080p Full HD (Web-DL)", color = TextPrimary, fontSize = 12.sp)
+                                                    },
+                                                    onClick = {
+                                                        showDownloadDropdown = false
+                                                        startDownload(context, ctgStream, "${ctgMovie?.title ?: "movie"}.mp4")
+                                                    }
+                                                )
+                                            }
+
+                                            extractorInfo?.downloadLinks?.forEach { dl ->
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text("${dl.title} (${dl.quality ?: "HD"})", color = TextPrimary, fontSize = 12.sp)
+                                                    },
+                                                    onClick = {
+                                                        showDownloadDropdown = false
+                                                        startDownload(context, dl.link, "${displayTitle}_${dl.quality ?: "HD"}.mp4")
+                                                    }
+                                                )
+                                            }
+
+                                            if (ctgStream == null && extractorInfo?.downloadLinks.isNullOrEmpty()) {
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text("ডিফল্ট ডাউনলোড লিংক", color = TextPrimary, fontSize = 12.sp)
+                                                    },
+                                                    onClick = {
+                                                        showDownloadDropdown = false
+                                                        activeStreamUrl?.let { url ->
+                                                            startDownload(context, url, "${displayTitle}.mp4")
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     } else {
                         Box(
                             modifier = Modifier

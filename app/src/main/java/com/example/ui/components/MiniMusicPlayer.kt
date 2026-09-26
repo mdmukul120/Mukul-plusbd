@@ -152,14 +152,35 @@ fun MiniMusicPlayer(
                     // Next Track Button
                     IconButton(
                         onClick = { MusicPlayerManager.playNext() },
-                        modifier = Modifier.size(38.dp)
+                        modifier = Modifier.size(34.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "Next",
                             tint = TextPrimary,
-                            modifier = Modifier.size(22.dp)
+                            modifier = Modifier.size(20.dp)
                         )
+                    }
+
+                    // Close Button (Dismiss Mini Player)
+                    IconButton(
+                        onClick = { MusicPlayerManager.stop() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = CinemaSurfaceVariant,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Close,
+                                    contentDescription = "Close Player",
+                                    tint = TextPrimary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
