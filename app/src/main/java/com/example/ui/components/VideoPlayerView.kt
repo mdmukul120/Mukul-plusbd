@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -86,10 +87,36 @@ fun VideoPlayerView(
     var showControls by remember { mutableStateOf(true) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
+    var isDraggingSlider by remember { mutableStateOf(false) }
+    var sliderDragPosition by remember { mutableFloatStateOf(0f) }
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
     var isBuffering by remember { mutableStateOf(true) }
     var autoRetryCount by remember(playableUrl) { mutableIntStateOf(0) }
+
+    // Immediately extract duration for offline/local files using MediaMetadataRetriever
+    LaunchedEffect(playableUrl) {
+        if (playableUrl.startsWith("/") || playableUrl.startsWith("file:")) {
+            withContext(Dispatchers.IO) {
+                try {
+                    val cleanPath = if (playableUrl.startsWith("file://")) Uri.parse(playableUrl).path ?: playableUrl.removePrefix("file://") else playableUrl
+                    val file = java.io.File(cleanPath)
+                    if (file.exists() && file.length() > 0) {
+                        val retriever = android.media.MediaMetadataRetriever()
+                        retriever.setDataSource(cleanPath)
+                        val durStr = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                        val durMs = durStr?.toLongOrNull() ?: 0L
+                        if (durMs > 0L) {
+                            totalDuration = durMs
+                        }
+                        retriever.release()
+                    }
+                } catch (e: Exception) {
+                    Log.w("VideoPlayerView", "Offline duration extract notice: ${e.message}")
+                }
+            }
+        }
+    }
 
     // 10 Custom Controllers State
     var isScreenLocked by remember { mutableStateOf(false) } // 1. Screen Lock
@@ -176,7 +203,8 @@ fun VideoPlayerView(
                     Player.STATE_READY -> {
                         isBuffering = false
                         hasError = false
-                        totalDuration = exoPlayer.duration.coerceAtLeast(0L)
+                        val dur = exoPlayer.duration
+                        if (dur > 0L) totalDuration = dur
                     }
                     Player.STATE_ENDED -> {
                         isBuffering = false
@@ -186,6 +214,11 @@ fun VideoPlayerView(
                         isBuffering = false
                     }
                 }
+            }
+
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                val dur = exoPlayer.duration
+                if (dur > 0L) totalDuration = dur
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -227,12 +260,17 @@ fun VideoPlayerView(
         }
     }
 
-    // Position tracker coroutine
-    LaunchedEffect(isPlaying) {
-        while (isPlaying) {
-            currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
-            totalDuration = exoPlayer.duration.coerceAtLeast(0L)
-            delay(500)
+    // Continuous Position and Duration tracker
+    LaunchedEffect(exoPlayer) {
+        while (true) {
+            if (!isDraggingSlider) {
+                currentPosition = exoPlayer.currentPosition.coerceAtLeast(0L)
+                val dur = exoPlayer.duration
+                if (dur > 0L) {
+                    totalDuration = dur
+                }
+            }
+            delay(250)
         }
     }
 
@@ -502,24 +540,44 @@ fun VideoPlayerView(
                     }
                 }
 
-                // Center Main Controls: Controller 2 (Rewind 10s), Controller 1 (Play/Pause), Controller 3 (Forward 10s)
+                // Center Main Controls: Rewind 30s, Rewind 10s, Play/Pause, Forward 10s, Forward 30s
                 Row(
                     modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(28.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    // Rewind 30s
+                    IconButton(
+                        onClick = {
+                            val newPos = (exoPlayer.currentPosition - 30000).coerceAtLeast(0)
+                            exoPlayer.seekTo(newPos)
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0x66000000),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("-30s", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
                     // Rewind 10s
                     IconButton(
                         onClick = {
                             val newPos = (exoPlayer.currentPosition - 10000).coerceAtLeast(0)
                             exoPlayer.seekTo(newPos)
-                        }
+                        },
+                        modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Replay10,
                             contentDescription = "Rewind 10s",
                             tint = Color.White,
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(36.dp)
                         )
                     }
 
@@ -534,7 +592,8 @@ fun VideoPlayerView(
                         },
                         shape = CircleShape,
                         color = BrandRed,
-                        modifier = Modifier.size(60.dp)
+                        modifier = Modifier.size(60.dp),
+                        shadowElevation = 6.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -549,16 +608,38 @@ fun VideoPlayerView(
                     // Forward 10s
                     IconButton(
                         onClick = {
-                            val newPos = (exoPlayer.currentPosition + 10000).coerceAtMost(exoPlayer.duration)
+                            val maxDur = if (totalDuration > 0) totalDuration else Long.MAX_VALUE
+                            val newPos = (exoPlayer.currentPosition + 10000).coerceAtMost(maxDur)
                             exoPlayer.seekTo(newPos)
-                        }
+                        },
+                        modifier = Modifier.size(44.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Forward10,
                             contentDescription = "Forward 10s",
                             tint = Color.White,
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(36.dp)
                         )
+                    }
+
+                    // Forward 30s
+                    IconButton(
+                        onClick = {
+                            val maxDur = if (totalDuration > 0) totalDuration else Long.MAX_VALUE
+                            val newPos = (exoPlayer.currentPosition + 30000).coerceAtMost(maxDur)
+                            exoPlayer.seekTo(newPos)
+                        },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0x66000000),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("+30s", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
 
@@ -569,50 +650,66 @@ fun VideoPlayerView(
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    if (totalDuration > 0) {
-                        Slider(
-                            value = currentPosition.toFloat(),
-                            onValueChange = { newPos ->
-                                currentPosition = newPos.toLong()
-                                exoPlayer.seekTo(newPos.toLong())
-                            },
-                            valueRange = 0f..totalDuration.toFloat(),
-                            colors = SliderDefaults.colors(
-                                thumbColor = BrandRed,
-                                activeTrackColor = BrandRed,
-                                inactiveTrackColor = Color.DarkGray
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                    val fallbackDur = if (totalDuration > 0) totalDuration else exoPlayer.duration.coerceAtLeast(0L)
+                    val effectiveDuration = if (fallbackDur > 0) fallbackDur else (currentPosition + 300000L).coerceAtLeast(300000L)
+                    val displayPos = if (isDraggingSlider) sliderDragPosition.toLong() else currentPosition
+                    val currentVal = (if (isDraggingSlider) sliderDragPosition else currentPosition.toFloat()).coerceIn(0f, effectiveDuration.toFloat())
+
+                    // Scrubbing position indicator when dragging
+                    if (isDraggingSlider) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = BrandRed,
+                            modifier = Modifier
+                                .align(Alignment.CenterHorizontally)
+                                .padding(bottom = 4.dp)
+                        ) {
+                            Text(
+                                text = "ভিডিও টানা হচ্ছে: ${formatTime(displayPos)} / ${formatTime(effectiveDuration)}",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
                     }
 
+                    // Interactive Scrubbing Slider (প্রোগ্রেস বার টেনে দেখা)
+                    Slider(
+                        value = currentVal,
+                        onValueChange = { newPos ->
+                            isDraggingSlider = true
+                            sliderDragPosition = newPos
+                        },
+                        onValueChangeFinished = {
+                            exoPlayer.seekTo(sliderDragPosition.toLong())
+                            currentPosition = sliderDragPosition.toLong()
+                            isDraggingSlider = false
+                        },
+                        valueRange = 0f..effectiveDuration.toFloat(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = BrandRed,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.35f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(34.dp)
+                    )
+
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        if (totalDuration > 0) {
-                            Text(
-                                text = "${formatTime(currentPosition)} / ${formatTime(totalDuration)}",
-                                color = Color.LightGray,
-                                fontSize = 11.sp
-                            )
-                        } else {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    color = Color(0xFF10B981),
-                                    shape = CircleShape,
-                                    modifier = Modifier.size(8.dp)
-                                ) {}
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "LIVE BDIX HD",
-                                    color = Color(0xFF10B981),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
+                        Text(
+                            text = "${formatTime(displayPos)} / ${formatTime(effectiveDuration)}",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
 
                         // Controller 4: Fullscreen Toggle
                         if (onFullScreenToggle != null) {
@@ -625,6 +722,56 @@ fun VideoPlayerView(
                                 )
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // Always-visible Interactive Progress Bar at bottom when controls are hidden (টেনে দেখার সুযোগ)
+        if (!showControls && !isScreenLocked) {
+            val fallbackDur = if (totalDuration > 0) totalDuration else exoPlayer.duration.coerceAtLeast(0L)
+            val effectiveDuration = if (fallbackDur > 0) fallbackDur else 1L
+            val progressFraction = if (effectiveDuration > 1L) (currentPosition.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f) else 0f
+
+            Surface(
+                color = Color(0x99000000),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .clickable { showControls = true }
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 5.dp)
+                ) {
+                    LinearProgressIndicator(
+                        progress = { progressFraction },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(5.dp)
+                            .clip(RoundedCornerShape(2.5.dp)),
+                        color = BrandRed,
+                        trackColor = Color.White.copy(alpha = 0.3f)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${formatTime(currentPosition)} / ${if (effectiveDuration > 1L) formatTime(effectiveDuration) else "--:--"}",
+                            color = Color.White,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "ভিডিও টানতে ট্যাপ করুন (Tap to seek)",
+                            color = CyanAccent,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
             }

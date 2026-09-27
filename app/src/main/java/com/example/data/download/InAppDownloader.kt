@@ -47,6 +47,8 @@ data class DownloadTask(
 object InAppDownloader {
     private const val TAG = "InAppDownloader"
     private const val DOWNLOAD_DIR_NAME = "MukulOttDownloads"
+    private const val PREFS_NAME = "mukul_downloads_prefs"
+    private const val KEY_SAVED_DOWNLOADS = "saved_completed_downloads"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -70,6 +72,7 @@ object InAppDownloader {
      */
     fun init(context: Context) {
         coroutineScope.launch {
+            loadSavedDownloads(context)
             scanExistingFiles(context)
         }
     }
@@ -90,7 +93,67 @@ object InAppDownloader {
      */
     fun scanFiles(context: Context) {
         coroutineScope.launch {
+            loadSavedDownloads(context)
             scanExistingFiles(context)
+        }
+    }
+
+    private fun loadSavedDownloads(context: Context) {
+        try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val jsonStr = prefs.getString(KEY_SAVED_DOWNLOADS, null) ?: return
+            val jsonArr = org.json.JSONArray(jsonStr)
+            val list = mutableListOf<DownloadTask>()
+
+            for (i in 0 until jsonArr.length()) {
+                val obj = jsonArr.optJSONObject(i) ?: continue
+                val filePath = obj.optString("filePath", "")
+                val file = File(filePath)
+                if (file.exists() && file.length() > 0) {
+                    list.add(
+                        DownloadTask(
+                            id = obj.optString("id", file.name),
+                            movieSlug = obj.optString("movieSlug", ""),
+                            title = obj.optString("title", file.nameWithoutExtension),
+                            poster = obj.optString("poster", ""),
+                            quality = obj.optString("quality", "HD"),
+                            downloadUrl = obj.optString("downloadUrl", ""),
+                            status = DownloadStatus.COMPLETED,
+                            progress = 1.0f,
+                            downloadedBytes = file.length(),
+                            totalBytes = file.length(),
+                            speedText = "ডাউনলোড সম্পন্ন",
+                            filePath = file.absolutePath
+                        )
+                    )
+                }
+            }
+            _completedDownloads.value = list
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to load saved downloads from prefs", e)
+        }
+    }
+
+    private fun persistCompletedDownloads(context: Context) {
+        try {
+            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val jsonArr = org.json.JSONArray()
+            for (task in _completedDownloads.value) {
+                val obj = org.json.JSONObject().apply {
+                    put("id", task.id)
+                    put("movieSlug", task.movieSlug)
+                    put("title", task.title)
+                    put("poster", task.poster)
+                    put("quality", task.quality)
+                    put("downloadUrl", task.downloadUrl)
+                    put("filePath", task.filePath)
+                    put("totalBytes", task.totalBytes)
+                }
+                jsonArr.put(obj)
+            }
+            prefs.edit().putString(KEY_SAVED_DOWNLOADS, jsonArr.toString()).apply()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to persist completed downloads", e)
         }
     }
 
@@ -102,7 +165,7 @@ object InAppDownloader {
             n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".webm") || n.endsWith(".m4a") || n.endsWith(".mp3")
         } ?: return
 
-        val existingMap = _completedDownloads.value.associateBy { it.filePath }
+        val existingMap = _completedDownloads.value.associateBy { it.filePath }.toMutableMap()
         val list = mutableListOf<DownloadTask>()
 
         for (f in files) {
@@ -129,6 +192,7 @@ object InAppDownloader {
             }
         }
         _completedDownloads.value = list
+        persistCompletedDownloads(context)
     }
 
     /**
@@ -185,8 +249,8 @@ object InAppDownloader {
         updateTask(task.copy(status = DownloadStatus.DOWNLOADING, progress = 0f))
 
         val downloadDir = getDownloadDirectory(context)
-        val safeTitle = task.title.replace("[^a-zA-Z0-9.-]".toRegex(), "_")
-        val fileName = "${safeTitle}_${task.quality.filter { it.isDigit() }.ifEmpty { "HD" }}.mp4"
+        val safeId = task.id.replace("[^a-zA-Z0-9_-]".toRegex(), "_")
+        val fileName = if (safeId.isNotBlank()) "${safeId}.mp4" else "mukul_vid_${System.currentTimeMillis()}.mp4"
         val targetFile = File(downloadDir, fileName)
 
         var inputStream: InputStream? = null
@@ -282,6 +346,7 @@ object InAppDownloader {
             currentCompleted.removeAll { it.id == completedTask.id }
             currentCompleted.add(0, completedTask)
             _completedDownloads.value = currentCompleted
+            persistCompletedDownloads(context)
 
         } catch (e: CancellationException) {
             updateTask(task.copy(status = DownloadStatus.CANCELLED, speedText = "বাতিল করা হয়েছে"))
@@ -327,6 +392,7 @@ object InAppDownloader {
         val currentCompleted = _completedDownloads.value.toMutableList()
         currentCompleted.removeAll { it.id == taskId }
         _completedDownloads.value = currentCompleted
+        persistCompletedDownloads(context)
     }
 
     private fun updateTask(task: DownloadTask) {

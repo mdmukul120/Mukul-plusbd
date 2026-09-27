@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -236,8 +238,12 @@ fun MukulOttScreen(
     }
 
     // Hardware back press handler
+    var isPlayerFullScreen by remember { mutableStateOf(false) }
+
     BackHandler(enabled = true) {
-        if (selectedMovieSlug != null) {
+        if (isPlayerFullScreen) {
+            isPlayerFullScreen = false
+        } else if (selectedMovieSlug != null) {
             selectedMovieSlug = null
             activePlayUrl = null
         } else if (onBack != null) {
@@ -252,24 +258,31 @@ fun MukulOttScreen(
     ) {
         if (selectedMovieSlug != null) {
             // ================================================================
-            // 🎬 IN-APP VIDEO PLAYER & MOVIE CONTROLS
+            // 🎬 IN-APP VIDEO PLAYER & MOVIE CONTROLS (Responsive)
             // ================================================================
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(CinemaBackground)
             ) {
-                // 1. VIDEO PLAYER VIEW
-                Box(
-                    modifier = Modifier
+                // 1. VIDEO PLAYER VIEW (Responsive Viewport)
+                val playerBoxModifier = if (isPlayerFullScreen) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier
                         .fillMaxWidth()
                         .aspectRatio(16f / 9f)
-                        .background(Color.Black)
+                }
+
+                Box(
+                    modifier = playerBoxModifier.background(Color.Black)
                 ) {
                     if (activePlayUrl != null) {
                         VideoPlayerView(
                             videoUrl = activePlayUrl!!,
                             title = movieDetail?.title ?: "Mukul OTT",
+                            onFullScreenToggle = { isPlayerFullScreen = !isPlayerFullScreen },
+                            isFullScreen = isPlayerFullScreen,
                             modifier = Modifier.fillMaxSize()
                         )
                     } else if (isLoadingDetail) {
@@ -334,23 +347,21 @@ fun MukulOttScreen(
                     }
                 }
 
-                // 2. REQUIRED CONTROLS ROW:
-                // [১. আগের পেজে ফেরার ছোট বাটন]
-                // [২. রেজুলেশন বাটন (আলাদা)]
-                // [৩. এপিসোড বাটন (আলাদা)]
-                // [৪. ডাউনলোড বাটন (ক্লিক করলে রেজুলেশন ড্রপডাউন)]
-                Surface(
-                    color = CinemaSurfaceVariant,
-                    tonalElevation = 4.dp,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                // 2. REQUIRED CONTROLS ROW (Responsive horizontal scrollable):
+                if (!isPlayerFullScreen) {
+                    Surface(
+                        color = CinemaSurfaceVariant,
+                        tonalElevation = 4.dp,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
                         // (১) ফিরে যান বাটন (Small Back Button)
                         FilledTonalButton(
                             onClick = {
@@ -1068,8 +1079,8 @@ fun MukulOttScreen(
                     }
                 }
             }
-
-        } else {
+        }
+    } else {
             // ================================================================
             // 🎬 MUKUL OTT MOVIES GRID & PAGINATION VIEW
             // ================================================================
@@ -1321,7 +1332,6 @@ fun MukulOttScreen(
                             }
                         }
                     }
-
                 } else {
                     // Movies to display: either deep search results or current page movies
                     val sourceList = if (searchQuery.isNotEmpty()) deepSearchResults else movies
@@ -1649,6 +1659,7 @@ fun MukulOttMovieCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
     ) {
         Column {
+            // Clean Image Container without ANY text on top of it
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1665,57 +1676,21 @@ fun MukulOttMovieCard(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Top Quality / Kind Badges
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Surface(
-                        color = if (item.kind == "series") CyanAccent.copy(alpha = 0.85f) else BrandRed.copy(alpha = 0.85f),
-                        shape = RoundedCornerShape(3.dp)
-                    ) {
-                        Text(
-                            text = if (item.kind == "series") "সিরিজ" else "মুভি",
-                            color = Color.White,
-                            fontSize = 8.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
-                    }
-
-                    if (item.qualityTag.isNotEmpty()) {
-                        Surface(
-                            color = Color.Black.copy(alpha = 0.75f),
-                            shape = RoundedCornerShape(3.dp)
-                        ) {
-                            Text(
-                                text = item.qualityTag,
-                                color = Color(0xFFFFB020),
-                                fontSize = 8.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Play Overlay Icon at bottom
+                // Play Overlay Icon at bottom corner (no text)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.75f)),
-                                startY = 100f
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
+                                startY = 120f
                             )
                         ),
                     contentAlignment = Alignment.BottomEnd
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = BrandRed.copy(alpha = 0.85f),
+                        color = BrandRed.copy(alpha = 0.9f),
                         modifier = Modifier
                             .padding(5.dp)
                             .size(22.dp)
@@ -1732,8 +1707,8 @@ fun MukulOttMovieCard(
                 }
             }
 
-            // Title and Year
-            Column(modifier = Modifier.padding(5.dp)) {
+            // Title, Year, and Badges Below Image (ইমেজের নিচে)
+            Column(modifier = Modifier.padding(6.dp)) {
                 Text(
                     text = item.title,
                     color = TextPrimary,
@@ -1742,11 +1717,49 @@ fun MukulOttMovieCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "${item.year}",
-                    color = TextMuted,
-                    fontSize = 9.sp
-                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = if (item.year > 0) "${item.year}" else "",
+                        color = TextMuted,
+                        fontSize = 9.sp
+                    )
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        if (item.kind == "series") {
+                            Surface(
+                                color = CyanAccent.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(2.dp)
+                            ) {
+                                Text(
+                                    text = "সিরিজ",
+                                    color = CyanAccent,
+                                    fontSize = 7.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                )
+                            }
+                        }
+                        if (item.qualityTag.isNotEmpty()) {
+                            Surface(
+                                color = Color(0xFFFFB020).copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(2.dp)
+                            ) {
+                                Text(
+                                    text = item.qualityTag,
+                                    color = Color(0xFFFFB020),
+                                    fontSize = 7.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -1772,6 +1785,7 @@ fun LotteryMovieCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column {
+            // Clean Image Container without ANY text on top of it
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1788,48 +1802,14 @@ fun LotteryMovieCard(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Lottery Tag Badge
-                Surface(
-                    color = Color(0xFFFFB020).copy(alpha = 0.9f),
-                    shape = RoundedCornerShape(topStart = 0.dp, bottomEnd = 6.dp),
-                    modifier = Modifier.align(Alignment.TopStart)
-                ) {
-                    Text(
-                        text = "🎲 লটারি",
-                        color = Color.Black,
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                    )
-                }
-
-                // Quality Badge
-                if (item.qualityTag.isNotEmpty()) {
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.8f),
-                        shape = RoundedCornerShape(3.dp),
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(3.dp)
-                    ) {
-                        Text(
-                            text = item.qualityTag,
-                            color = Color.White,
-                            fontSize = 7.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
-                        )
-                    }
-                }
-
-                // Play icon overlay
+                // Play icon overlay at bottom corner (no text)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.7f)),
-                                startY = 70f
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
+                                startY = 80f
                             )
                         ),
                     contentAlignment = Alignment.BottomEnd
@@ -1853,7 +1833,8 @@ fun LotteryMovieCard(
                 }
             }
 
-            Column(modifier = Modifier.padding(4.dp)) {
+            // Info Below Image (লটারি ট্যাগ এবং টাইটেল নিচে)
+            Column(modifier = Modifier.padding(5.dp)) {
                 Text(
                     text = item.title,
                     color = TextPrimary,
@@ -1862,11 +1843,26 @@ fun LotteryMovieCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = "${item.year}",
-                    color = TextMuted,
-                    fontSize = 8.5.sp
-                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "লটারি",
+                        color = Color(0xFFFFB020),
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (item.qualityTag.isNotEmpty()) {
+                        Text(
+                            text = item.qualityTag,
+                            color = TextMuted,
+                            fontSize = 7.5.sp
+                        )
+                    }
+                }
             }
         }
     }

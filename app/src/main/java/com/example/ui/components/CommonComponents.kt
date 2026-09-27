@@ -139,78 +139,48 @@ fun MoviePosterCard(
                         )
                     }
                 }
-
-                // Top rating or quality badge
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    val rating = movie.online_rating ?: movie.user_rating
-                    if (rating != null && rating > 0.0) {
-                        Surface(
-                            color = Color(0xCC000000),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Star,
-                                    contentDescription = null,
-                                    tint = GoldRating,
-                                    modifier = Modifier.size(11.dp)
-                                )
-                                Spacer(modifier = Modifier.width(2.dp))
-                                Text(
-                                    text = String.format("%.1f", rating),
-                                    color = Color.White,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.width(1.dp))
-                    }
-
-                    if (movie.year != null && movie.year > 0) {
-                        Surface(
-                            color = Color(0xAA000000),
-                            shape = RoundedCornerShape(4.dp)
-                        ) {
-                            Text(
-                                text = movie.year.toString(),
-                                color = TextSecondary,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
             }
 
-            // Title & category
-            Column(modifier = Modifier.padding(8.dp)) {
+            // Title & category (No text overlay on image)
+            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
                 Text(
                     text = movie.title,
                     color = TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
+                    fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Text(
-                    text = movie.Library?.name ?: movie.genre ?: "Movie",
-                    color = TextMuted,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = movie.Library?.name ?: movie.genre ?: "Movie",
+                        color = TextMuted,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                    val rating = movie.online_rating ?: movie.user_rating
+                    if (rating != null && rating > 0.0) {
+                        Text(
+                            text = "★ ${String.format("%.1f", rating)}",
+                            color = GoldRating,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else if (movie.year != null && movie.year > 0) {
+                        Text(
+                            text = "${movie.year}",
+                            color = TextMuted,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
             }
         }
     }

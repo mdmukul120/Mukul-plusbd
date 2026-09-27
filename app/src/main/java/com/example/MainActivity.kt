@@ -52,6 +52,7 @@ enum class ScreenTab(val title: String, val icon: ImageVector) {
     MUSIC("মিউজিক", Icons.Default.MusicNote),
     YOUTUBE("ইউটিউব", Icons.Default.PlayCircle),
     MUKUL_OTT("ওটিটি", Icons.Default.VideoLibrary),
+    REELS("রিলস", Icons.Default.SlowMotionVideo),
     EXTRACTOR("ডাউনলোড", Icons.Default.CloudDownload),
     PROFILE("প্রোফাইল", Icons.Default.Person)
 }
@@ -121,11 +122,12 @@ fun MukulPlusApp() {
 
     // Handle Android system back button
     BackHandler(
-        enabled = selectedMovieId != null || selectedExtractorPost != null
+        enabled = selectedMovieId != null || selectedExtractorPost != null || currentTab != ScreenTab.HOME
     ) {
         when {
             selectedMovieId != null -> selectedMovieId = null
             selectedExtractorPost != null -> selectedExtractorPost = null
+            currentTab != ScreenTab.HOME -> currentTab = ScreenTab.HOME
         }
     }
 
@@ -283,6 +285,17 @@ fun MukulPlusApp() {
                     )
 
                     NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.SlowMotionVideo, contentDescription = null, tint = if (currentTab == ScreenTab.REELS) BrandRed else TextSecondary) },
+                        label = { Text("রিলস ও শর্টস") },
+                        selected = currentTab == ScreenTab.REELS,
+                        onClick = {
+                            currentTab = ScreenTab.REELS
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = if (currentTab == ScreenTab.EXTRACTOR) BrandRed else TextSecondary) },
                         label = { Text("ডাউনলোড") },
                         selected = currentTab == ScreenTab.EXTRACTOR,
@@ -374,7 +387,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE) {
+                if (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.REELS) {
                     Surface(
                         color = CinemaSurface,
                         tonalElevation = 3.dp,
@@ -445,6 +458,16 @@ fun MukulPlusApp() {
                         tonalElevation = 6.dp,
                         modifier = Modifier.fillMaxWidth()
                     ) {
+                        val bottomBarTabs = listOf(
+                            ScreenTab.HOME,
+                            ScreenTab.MOVIES,
+                            ScreenTab.LIVE_TV,
+                            ScreenTab.MUSIC,
+                            ScreenTab.YOUTUBE,
+                            ScreenTab.MUKUL_OTT,
+                            ScreenTab.REELS,
+                            ScreenTab.EXTRACTOR
+                        )
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -454,7 +477,7 @@ fun MukulPlusApp() {
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceAround
                         ) {
-                            ScreenTab.values().forEach { tab ->
+                            bottomBarTabs.forEach { tab ->
                                 val isSelected = currentTab == tab
                                 Column(
                                     modifier = Modifier
@@ -539,6 +562,12 @@ fun MukulPlusApp() {
                     }
                     ScreenTab.MUKUL_OTT -> {
                         MukulOttScreen()
+                    }
+                    ScreenTab.REELS -> {
+                        ReelsScreen(
+                            onNavigateBack = { currentTab = ScreenTab.HOME },
+                            onNavigateToProfile = { currentTab = ScreenTab.PROFILE }
+                        )
                     }
                     ScreenTab.EXTRACTOR -> {
                         ExtractorScreen()
