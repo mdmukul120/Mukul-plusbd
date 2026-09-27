@@ -479,7 +479,57 @@ object YouTubeApiService {
                 description = vid.description
             )
         }
-        return@withContext YouTubeReelsResult(scraped, "")
+        val finalList = if (scraped.isNotEmpty()) scraped else getCuratedTrendingShorts()
+        return@withContext YouTubeReelsResult(finalList, "")
+    }
+
+    private fun getCuratedTrendingShorts(): List<YouTubeReelItem> {
+        return listOf(
+            YouTubeReelItem(
+                id = "jNQXAC9IVRw",
+                title = "Me at the zoo - Viral Classic Shorts",
+                channelTitle = "jawed",
+                thumbnailUrl = "https://i.ytimg.com/vi/jNQXAC9IVRw/hqdefault.jpg",
+                viewCount = "320M ভিউ",
+                publishedTime = "Trending",
+                likesCount = "15M",
+                commentsCount = "1.2M",
+                description = "The first video on YouTube"
+            ),
+            YouTubeReelItem(
+                id = "kJQP7kiw5Fk",
+                title = "Luis Fonsi - Despacito Shorts",
+                channelTitle = "Luis Fonsi",
+                thumbnailUrl = "https://i.ytimg.com/vi/kJQP7kiw5Fk/hqdefault.jpg",
+                viewCount = "8.4B ভিউ",
+                publishedTime = "Trending",
+                likesCount = "52M",
+                commentsCount = "4.3M",
+                description = "Music trending reel"
+            ),
+            YouTubeReelItem(
+                id = "9bZkp7q19f0",
+                title = "PSY - GANGNAM STYLE #Shorts",
+                channelTitle = "officialpsy",
+                thumbnailUrl = "https://i.ytimg.com/vi/9bZkp7q19f0/hqdefault.jpg",
+                viewCount = "5.1B ভিউ",
+                publishedTime = "Viral",
+                likesCount = "28M",
+                commentsCount = "5.4M",
+                description = "Legendary dance reel"
+            ),
+            YouTubeReelItem(
+                id = "kffacxfA7G4",
+                title = "Justin Bieber - Baby Viral Shorts",
+                channelTitle = "Justin Bieber",
+                thumbnailUrl = "https://i.ytimg.com/vi/kffacxfA7G4/hqdefault.jpg",
+                viewCount = "3.1B ভিউ",
+                publishedTime = "Classic",
+                likesCount = "24M",
+                commentsCount = "2.1M",
+                description = "Global trending pop"
+            )
+        )
     }
 
     private fun enrichReelDetails(reels: List<YouTubeReelItem>, videoIds: List<String>): List<YouTubeReelItem> {

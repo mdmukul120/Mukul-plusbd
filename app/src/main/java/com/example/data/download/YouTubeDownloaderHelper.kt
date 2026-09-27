@@ -4,8 +4,10 @@ import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -29,8 +31,8 @@ object YouTubeDownloaderHelper {
     private const val TAG = "YouTubeDownloader"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(18, TimeUnit.SECONDS)
         .connectionPool(okhttp3.ConnectionPool(10, 5, TimeUnit.MINUTES))
         .retryOnConnectionFailure(true)
         .build()
@@ -83,101 +85,181 @@ object YouTubeDownloaderHelper {
     }
 
     /**
-     * Extracts direct download URL using downclip and savenow APIs
+     * Extracts direct download URL with multi-server fallback
      */
     suspend fun extractDownloadUrl(
         youtubeUrl: String,
         format: String,
         onProgressStatus: (String) -> Unit = {}
     ): Result<ExtractionResult> = withContext(Dispatchers.IO) {
+        val videoId = extractVideoId(youtubeUrl) ?: "yt_video"
+        val canonicalUrl = getCanonicalWatchUrl(youtubeUrl) ?: youtubeUrl
+        val defaultTitle = "YouTube Video $videoId"
+        val defaultThumb = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+        onProgressStatus("ডাউনলোড সার্ভার সংযোগ করা হচ্ছে...")
+
+        // Method 1: Downclip / Savenow primary converter
         try {
-            val videoId = extractVideoId(youtubeUrl) ?: "yt_video"
-            val canonicalUrl = getCanonicalWatchUrl(youtubeUrl) ?: youtubeUrl
-
-            onProgressStatus("ডাউনলোড সার্ভারে অনুরোধ পাঠানো হচ্ছে...")
-
-            // Step 1: Call start API
             val startApiUrl = "https://downclip.vercel.app/api/download/start?url=${URLEncoder.encode(canonicalUrl, "UTF-8")}&format=$format"
             val startReq = Request.Builder()
                 .url(startApiUrl)
-                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:115.0) MukulPlusApp")
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:128.0) MukulPlusApp")
                 .header("Accept", "application/json")
                 .build()
 
             val startResponse = client.newCall(startReq).execute()
-            val startBody = startResponse.body?.string() ?: throw Exception("সার্ভার থেকে কোনো রেসপন্স পাওয়া যায়নি")
+            if (startResponse.isSuccessful) {
+                val startBody = startResponse.body?.string().orEmpty()
+                if (startBody.isNotEmpty()) {
+                    val startJson = JSONObject(startBody)
+                    val taskId = startJson.optString("id", "")
+                    val title = startJson.optString("title", defaultTitle)
+                    val thumbnail = startJson.optString("image", defaultThumb)
 
-            val startJson = JSONObject(startBody)
-            val isSuccess = startJson.optBoolean("success", true)
-            val taskId = startJson.optString("id", "")
-            val title = startJson.optString("title", "YouTube Video $videoId")
-            val thumbnail = startJson.optString("image", "https://i.ytimg.com/vi/$videoId/hqdefault.jpg")
+                    if (taskId.isNotEmpty()) {
+                        onProgressStatus("ভিডিও কনভার্ট ও স্ট্রিম প্রস্তুত হচ্ছে...")
+                        val progressApiUrl = "https://p.savenow.to/api/progress?id=$taskId"
+                        var directDownloadUrl: String? = null
+                        var attempts = 0
+                        val maxAttempts = 35
 
-            if (taskId.isEmpty()) {
-                val errorMsg = startJson.optString("message", "ডাউনলোড লিঙ্ক তৈরি করতে ব্যর্থ হয়েছে")
-                throw Exception(errorMsg)
-            }
+                        while (attempts < maxAttempts) {
+                            delay(900)
+                            attempts++
 
-            onProgressStatus("ভিডিও কনভার্ট করা হচ্ছে...")
+                            val pollReq = Request.Builder()
+                                .url(progressApiUrl)
+                                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:128.0) MukulPlusApp")
+                                .header("Accept", "application/json")
+                                .build()
 
-            // Step 2: Poll progress API
-            val progressApiUrl = "https://p.savenow.to/api/progress?id=$taskId"
-            var directDownloadUrl: String? = null
-            var attempts = 0
-            val maxAttempts = 55 // ~45 seconds max with 800ms intervals
+                            try {
+                                val pollResponse = client.newCall(pollReq).execute()
+                                val pollBody = pollResponse.body?.string().orEmpty()
+                                if (pollBody.isNotEmpty()) {
+                                    val pollJson = JSONObject(pollBody)
+                                    val dlUrl = pollJson.optString("download_url", "")
+                                    val text = pollJson.optString("text", "")
+                                    val progressVal = pollJson.optInt("progress", 0)
 
-            while (attempts < maxAttempts) {
-                delay(800)
-                attempts++
+                                    if (text.isNotEmpty()) {
+                                        val percent = if (progressVal in 1..1000) " (${progressVal / 10}%)" else ""
+                                        onProgressStatus("প্রস্তুত হচ্ছে: $text$percent")
+                                    }
 
-                val pollReq = Request.Builder()
-                    .url(progressApiUrl)
-                    .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:115.0) MukulPlusApp")
-                    .header("Accept", "application/json")
-                    .build()
-
-                try {
-                    val pollResponse = client.newCall(pollReq).execute()
-                    val pollBody = pollResponse.body?.string().orEmpty()
-                    if (pollBody.isNotEmpty()) {
-                        val pollJson = JSONObject(pollBody)
-                        val dlUrl = pollJson.optString("download_url", "")
-                        val text = pollJson.optString("text", "")
-                        val progressVal = pollJson.optInt("progress", 0)
-
-                        if (text.isNotEmpty()) {
-                            val percent = if (progressVal in 1..1000) " (${progressVal / 10}%)" else ""
-                            onProgressStatus("প্রস্তুত হচ্ছে: $text$percent")
+                                    if (dlUrl.isNotEmpty() && dlUrl != "null") {
+                                        directDownloadUrl = dlUrl
+                                        break
+                                    }
+                                }
+                            } catch (_: Exception) {}
                         }
 
-                        if (dlUrl.isNotEmpty() && dlUrl != "null") {
-                            directDownloadUrl = dlUrl
-                            break
+                        if (!directDownloadUrl.isNullOrEmpty()) {
+                            onProgressStatus("ডাউনলোড লিঙ্ক তৈরি সম্পন্ন!")
+                            return@withContext Result.success(
+                                ExtractionResult(
+                                    downloadUrl = directDownloadUrl,
+                                    title = title,
+                                    thumbnail = thumbnail,
+                                    format = format,
+                                    videoId = videoId
+                                )
+                            )
                         }
                     }
-                } catch (pe: Exception) {
-                    Log.w(TAG, "Polling attempt $attempts failed", pe)
                 }
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Method 1 Downclip failed: ${e.message}, trying Method 2")
+        }
 
-            if (directDownloadUrl.isNullOrEmpty()) {
-                throw Exception("ডাউনলোড লিঙ্ক তৈরিতে সময় বেশি লাগছে। পুনরায় চেষ্টা করুন।")
+        // Method 2: Cobalt High-Speed Backend API
+        onProgressStatus("ব্যাকআপ সার্ভার থেকে লিঙ্ক সংগ্রহ হচ্ছে...")
+        try {
+            val cobaltUrls = listOf(
+                "https://cobalt-backend.onrender.com/api/json",
+                "https://api.cobalt.tools/api/json"
+            )
+
+            val jsonBody = JSONObject().apply {
+                put("url", canonicalUrl)
+                put("vQuality", if (format.contains("1080")) "1080" else if (format.contains("720")) "720" else "480")
+                put("isAudioOnly", format.equals("mp3", ignoreCase = true))
             }
 
-            onProgressStatus("ডাউনলোড প্রস্তুত!")
+            val requestBody = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
 
-            Result.success(
-                ExtractionResult(
-                    downloadUrl = directDownloadUrl,
-                    title = title,
-                    thumbnail = thumbnail,
-                    format = format,
-                    videoId = videoId
-                )
-            )
+            for (endpoint in cobaltUrls) {
+                try {
+                    val req = Request.Builder()
+                        .url(endpoint)
+                        .post(requestBody)
+                        .header("Accept", "application/json")
+                        .header("User-Agent", "MukulPlusApp/1.0")
+                        .build()
+
+                    val res = client.newCall(req).execute()
+                    val body = res.body?.string().orEmpty()
+                    if (res.isSuccessful && body.isNotEmpty()) {
+                        val obj = JSONObject(body)
+                        val streamUrl = obj.optString("url", "")
+                        if (streamUrl.isNotEmpty()) {
+                            onProgressStatus("ডাউনলোড প্রস্তুত!")
+                            return@withContext Result.success(
+                                ExtractionResult(
+                                    downloadUrl = streamUrl,
+                                    title = defaultTitle,
+                                    thumbnail = defaultThumb,
+                                    format = format,
+                                    videoId = videoId
+                                )
+                            )
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
         } catch (e: Exception) {
-            Log.e(TAG, "extractDownloadUrl failed", e)
-            Result.failure(e)
+            Log.w(TAG, "Method 2 Cobalt failed: ${e.message}")
         }
+
+        // Method 3: Direct Invidious Proxy Stream
+        try {
+            onProgressStatus("সরাসরি স্ট্রিম লিঙ্ক প্রস্তুত করা হচ্ছে...")
+            val invidiousUrl = "https://inv.nadeko.net/api/v1/videos/$videoId"
+            val req = Request.Builder()
+                .url(invidiousUrl)
+                .header("User-Agent", "Mozilla/5.0")
+                .header("Accept", "application/json")
+                .build()
+
+            val res = client.newCall(req).execute()
+            if (res.isSuccessful) {
+                val body = res.body?.string().orEmpty()
+                if (body.isNotEmpty()) {
+                    val json = JSONObject(body)
+                    val title = json.optString("title", defaultTitle)
+                    val formatStreams = json.optJSONArray("formatStreams")
+                    if (formatStreams != null && formatStreams.length() > 0) {
+                        val firstStream = formatStreams.getJSONObject(0)
+                        val streamUrl = firstStream.optString("url", "")
+                        if (streamUrl.isNotEmpty()) {
+                            return@withContext Result.success(
+                                ExtractionResult(
+                                    downloadUrl = streamUrl,
+                                    title = title,
+                                    thumbnail = defaultThumb,
+                                    format = format,
+                                    videoId = videoId
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        Result.failure(Exception("ডাউনলোড সার্ভার ব্যস্ত বা ভিডিওটি রেস্ট্রিক্টেড। পুনরায় চেষ্টা করুন।"))
     }
 }

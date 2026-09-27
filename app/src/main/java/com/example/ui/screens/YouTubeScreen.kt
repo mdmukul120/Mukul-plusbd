@@ -524,6 +524,49 @@ fun YouTubeScreen(
                     modifier = Modifier.fillMaxWidth().statusBarsPadding()
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                        // YouTube Brand Header Bar
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    color = BrandRed,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.size(28.dp, 20.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "YouTube",
+                                    color = Color.White,
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = (-0.5).sp
+                                )
+                            }
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                IconButton(
+                                    onClick = { loadFeed(selectedCategory) },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = TextSecondary, modifier = Modifier.size(18.dp))
+                                }
+
+                                IconButton(
+                                    onClick = onNavigateToDownloads,
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(Icons.Default.CloudDownload, contentDescription = "Downloads", tint = CyanAccent, modifier = Modifier.size(20.dp))
+                                }
+                            }
+                        }
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -992,7 +1035,22 @@ fun YouTubeScreen(
                                                 )
                                                 isExtracting = false
                                                 if (extractResult.isSuccess) {
-                                                    extractionResult = extractResult.getOrNull()
+                                                    val res = extractResult.getOrNull()
+                                                    if (res != null && res.downloadUrl.isNotEmpty()) {
+                                                        InAppDownloader.startDownload(
+                                                            context = context,
+                                                            movieSlug = "yt_${res.videoId}",
+                                                            title = videoToDownload.title,
+                                                            poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
+                                                            quality = res.format,
+                                                            downloadUrl = res.downloadUrl
+                                                        )
+                                                        Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখুন", Toast.LENGTH_LONG).show()
+                                                        showResolutionDialog = false
+                                                        targetDownloadVideo = null
+                                                    } else {
+                                                        extractionResult = res
+                                                    }
                                                 } else {
                                                     val err = extractResult.exceptionOrNull()?.message ?: "ডাউনলোড লিঙ্ক তৈরি করতে ব্যর্থ হয়েছে"
                                                     Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
@@ -1135,82 +1193,91 @@ private fun YouTubeVideoCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Title and Details Below Photo
-            Text(
-                text = video.title,
-                color = TextPrimary,
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 18.sp
-            )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
+            // Title and Channel Avatar Row (ছবির মতো ইউটিউব লুক)
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top
             ) {
-                // Channel & Views Info
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = video.channelTitle,
-                        color = TextSecondary,
-                        fontSize = 11.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        if (video.viewCount.isNotEmpty()) {
-                            Text(
-                                text = video.viewCount,
-                                color = TextMuted,
-                                fontSize = 10.5.sp
-                            )
-                        }
-                        if (video.publishedTime.isNotEmpty()) {
-                            Text(
-                                text = "• ${video.publishedTime}",
-                                color = TextMuted,
-                                fontSize = 10.5.sp
-                            )
-                        }
+                // Circular Channel Avatar
+                Surface(
+                    shape = CircleShape,
+                    color = BrandRed,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = video.channelTitle.firstOrNull()?.uppercase() ?: "Y",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
 
-                // Direct Action Buttons: Play & Download
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilledTonalButton(
-                        onClick = onPlayClick,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = CinemaSurfaceVariant,
-                            contentColor = TextPrimary
-                        ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("প্লে", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+                Spacer(modifier = Modifier.width(10.dp))
 
-                    Button(
-                        onClick = onDownloadClick,
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("ডাউনলোড", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = video.title,
+                        color = TextPrimary,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 18.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(3.dp))
+
+                    Text(
+                        text = buildString {
+                            append(video.channelTitle)
+                            if (video.viewCount.isNotEmpty()) append(" • ${video.viewCount}")
+                            if (video.publishedTime.isNotEmpty()) append(" • ${video.publishedTime}")
+                        },
+                        color = TextSecondary,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Direct Action Buttons: Play & Download
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FilledTonalButton(
+                    onClick = onPlayClick,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = CinemaSurfaceVariant,
+                        contentColor = TextPrimary
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("প্লে করুন", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Button(
+                    onClick = onDownloadClick,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.height(34.dp)
+                ) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(15.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("ডাউনলোড", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

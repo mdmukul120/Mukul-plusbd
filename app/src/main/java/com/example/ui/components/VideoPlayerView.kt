@@ -56,7 +56,8 @@ fun VideoPlayerView(
     title: String,
     modifier: Modifier = Modifier,
     onFullScreenToggle: (() -> Unit)? = null,
-    isFullScreen: Boolean = false
+    isFullScreen: Boolean = false,
+    onClose: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -255,8 +256,12 @@ fun VideoPlayerView(
         exoPlayer.addListener(listener)
 
         onDispose {
-            exoPlayer.removeListener(listener)
-            exoPlayer.release()
+            try {
+                exoPlayer.removeListener(listener)
+                exoPlayer.stop()
+                exoPlayer.clearMediaItems()
+                exoPlayer.release()
+            } catch (_: Exception) {}
         }
     }
 
@@ -453,6 +458,27 @@ fun VideoPlayerView(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (onClose != null) {
+                        IconButton(
+                            onClick = {
+                                try {
+                                    exoPlayer.stop()
+                                    exoPlayer.clearMediaItems()
+                                } catch (_: Exception) {}
+                                onClose()
+                            },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Close Player",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(4.dp))
+                    }
+
                     Text(
                         text = title,
                         color = Color.White,
