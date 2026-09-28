@@ -44,9 +44,20 @@ data class YouTubeReelsResult(
     val nextPageToken: String = ""
 )
 
+object YouTubeFeedCache {
+    var cachedVideos: List<YouTubeVideoItem> = emptyList()
+    var cachedCategory: String = ""
+    var cachedQuery: String = ""
+    var isLoaded: Boolean = false
+}
+
 object YouTubeApiService {
     private const val TAG = "YouTubeApiService"
     const val API_KEY = "AIzaSyDCU8hByM-4DrUqRUYnGn-3llEO78bcxq8"
+
+    private val searchCache = java.util.concurrent.ConcurrentHashMap<String, List<YouTubeVideoItem>>()
+    private val trendingCache = java.util.concurrent.ConcurrentHashMap<String, List<YouTubeVideoItem>>()
+    private val reelsCache = java.util.concurrent.ConcurrentHashMap<String, List<YouTubeReelItem>>()
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
@@ -55,13 +66,19 @@ object YouTubeApiService {
         .build()
 
     /**
-     * Search videos via YouTube Data API v3 with automatic fallback
+     * Search videos via YouTube Data API v3 with automatic fallback and memory cache
      */
     suspend fun searchVideos(
         query: String,
-        maxResults: Int = 20
+        maxResults: Int = 20,
+        forceRefresh: Boolean = false
     ): List<YouTubeVideoItem> = withContext(Dispatchers.IO) {
         val trimmed = query.trim().ifEmpty { "trending bangla" }
+        val cacheKey = "${trimmed}_$maxResults"
+        if (!forceRefresh) {
+            val cached = searchCache[cacheKey]
+            if (!cached.isNullOrEmpty()) return@withContext cached
+        }
         // 1. Try official YouTube Data API v3 first
         try {
             val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
@@ -123,13 +140,25 @@ object YouTubeApiService {
         }
 
         // 2. Reliable Scraper Fallback (Never leaves user with empty/broken state)
-        return@withContext fallbackScrapeSearch(trimmed)
+        val fallback = fallbackScrapeSearch(trimmed)
+        if (fallback.isNotEmpty()) {
+            searchCache[cacheKey] = fallback
+        }
+        return@withContext fallback
     }
 
     /**
      * Get Trending / Popular videos (Home Feed)
      */
-    suspend fun getTrendingVideos(category: String = ""): List<YouTubeVideoItem> = withContext(Dispatchers.IO) {
+    suspend fun getTrendingVideos(
+        category: String = "",
+        forceRefresh: Boolean = false
+    ): List<YouTubeVideoItem> = withContext(Dispatchers.IO) {
+        if (!forceRefresh) {
+            val cached = trendingCache[category]
+            if (!cached.isNullOrEmpty()) return@withContext cached
+        }
+
         val query = when (category) {
             "bangla_song" -> "bangla new song official video"
             "natok" -> "bangla natok new 2026"
@@ -189,6 +218,7 @@ object YouTubeApiService {
                                     )
                                 )
                             }
+                            trendingCache[category] = list
                             return@withContext list
                         }
                     }
@@ -198,7 +228,11 @@ object YouTubeApiService {
             }
         }
 
-        return@withContext fallbackScrapeSearch(query)
+        val fallback = fallbackScrapeSearch(query)
+        if (fallback.isNotEmpty()) {
+            trendingCache[category] = fallback
+        }
+        return@withContext fallback
     }
 
     /**

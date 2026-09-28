@@ -141,8 +141,14 @@ fun MoviePosterCard(
                 }
             }
 
-            // Title & category (No text overlay on image)
-            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            // Title & category (No text overlay on image - uniform equal card height)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
                     text = movie.title,
                     color = TextPrimary,

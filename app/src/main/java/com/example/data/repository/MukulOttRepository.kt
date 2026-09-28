@@ -27,6 +27,11 @@ object MukulOttRepository {
     // Page cache to prevent redundant network calls
     private val pageCache = ConcurrentHashMap<Int, List<MukulOttMovieItem>>()
 
+    // Screen state cache across navigation
+    var cachedMovies: List<MukulOttMovieItem> = emptyList()
+    var cachedPage: Int = 1
+    var isLoaded: Boolean = false
+
     /**
      * Fetch paginated movies catalog
      * Endpoint: https://mukul-ott.ai.studio/api/movies?page=1

@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.api.ApiClient
+import com.example.data.download.InAppDownloader
 import com.example.data.model.*
 import com.example.data.repository.MediaRepository
 import com.example.data.util.DownloadUtils
@@ -809,9 +810,6 @@ fun MovieDetailScreen(
                                 },
                                 onDownload = {
                                     startDownload(context, ctgStream, "${ctgMovie?.title}.mp4")
-                                },
-                                onCopy = {
-                                    copyToClipboard(context, ctgStream)
                                 }
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -877,9 +875,6 @@ fun MovieDetailScreen(
                                     } else {
                                         startDownload(context, dl.link, "${displayTitle}_${dl.quality}.mp4")
                                     }
-                                },
-                                onCopy = {
-                                    copyToClipboard(context, dl.link)
                                 }
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -1182,8 +1177,7 @@ fun DownloadLinkCard(
     quality: String,
     link: String,
     onPlay: () -> Unit,
-    onDownload: () -> Unit,
-    onCopy: () -> Unit
+    onDownload: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1207,20 +1201,6 @@ fun DownloadLinkCard(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
-                }
-
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    IconButton(
-                        onClick = onCopy,
-                        modifier = Modifier.size(28.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ContentCopy,
-                            contentDescription = "Copy Link",
-                            tint = TextSecondary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
                 }
             }
 
@@ -1270,7 +1250,47 @@ fun DownloadLinkCard(
 }
 
 private fun startDownload(context: Context, url: String, fileName: String) {
-    DownloadUtils.openDownloadInChrome(context, url)
+    if (url.isBlank()) {
+        Toast.makeText(context, "ডাউনলোড লিঙ্ক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val safeSlug = fileName.replace(".mp4", "").replace(".mkv", "").replace(" ", "_").trim()
+    val cleanTitle = fileName.replace("_", " ").replace(".mp4", "").replace(".mkv", "").trim()
+    val quality = if (fileName.contains("1080")) "1080p" else if (fileName.contains("720")) "720p" else "HD"
+
+    // 1. Start in In-App Downloader
+    try {
+        InAppDownloader.startDownload(
+            context = context,
+            movieSlug = safeSlug,
+            title = cleanTitle,
+            poster = "",
+            quality = quality,
+            downloadUrl = url
+        )
+        Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! 'ডাউনলোড' পেজে অগ্রগতি দেখুন", Toast.LENGTH_LONG).show()
+    } catch (e: Exception) {
+        // Fallback to Chrome / system browser
+        DownloadUtils.openDownloadInChrome(context, url)
+    }
+
+    // 2. Also register with Android System DownloadManager if valid HTTP/HTTPS URL
+    try {
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+            if (dm != null) {
+                val uri = Uri.parse(url)
+                val request = DownloadManager.Request(uri)
+                    .setTitle(cleanTitle)
+                    .setDescription("মুভি ডাউনলোড চলছে...")
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "$safeSlug.mp4")
+                    .setAllowedOverMetered(true)
+                    .setAllowedOverRoaming(true)
+                dm.enqueue(request)
+            }
+        }
+    } catch (_: Exception) {}
 }
 
 private fun copyToClipboard(context: Context, text: String) {

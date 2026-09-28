@@ -11,6 +11,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,6 +49,7 @@ import kotlinx.coroutines.launch
 
 enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
+    SPORTS("স্পোর্টস", Icons.Default.SportsCricket),
     MOVIES("মুভি", Icons.Default.Movie),
     LIVE_TV("টিভি", Icons.Default.Tv),
     MUSIC("মিউজিক", Icons.Default.MusicNote),
@@ -224,6 +227,17 @@ fun MukulPlusApp() {
                         selected = currentTab == ScreenTab.HOME,
                         onClick = {
                             currentTab = ScreenTab.HOME
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.SportsCricket, contentDescription = null, tint = if (currentTab == ScreenTab.SPORTS) BrandRed else TextSecondary) },
+                        label = { Text("স্পোর্টস লাইভ") },
+                        selected = currentTab == ScreenTab.SPORTS,
+                        onClick = {
+                            currentTab = ScreenTab.SPORTS
                             coroutineScope.launch { drawerState.close() }
                         },
                         colors = drawerItemColors()
@@ -460,6 +474,7 @@ fun MukulPlusApp() {
                     ) {
                         val bottomBarTabs = listOf(
                             ScreenTab.HOME,
+                            ScreenTab.SPORTS,
                             ScreenTab.MOVIES,
                             ScreenTab.LIVE_TV,
                             ScreenTab.MUSIC,
@@ -472,18 +487,19 @@ fun MukulPlusApp() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .navigationBarsPadding()
-                                .height(50.dp)
-                                .padding(horizontal = 2.dp),
+                                .height(52.dp)
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceAround
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             bottomBarTabs.forEach { tab ->
                                 val isSelected = currentTab == tab
                                 Column(
                                     modifier = Modifier
-                                        .weight(1f)
+                                        .widthIn(min = 52.dp)
                                         .clickable { currentTab = tab }
-                                        .padding(vertical = 3.dp),
+                                        .padding(horizontal = 4.dp, vertical = 3.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.Center
                                 ) {
@@ -492,14 +508,14 @@ fun MukulPlusApp() {
                                         shape = RoundedCornerShape(10.dp)
                                     ) {
                                         Box(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = tab.icon,
                                                 contentDescription = tab.title,
                                                 tint = if (isSelected) BrandRed else TextMuted,
-                                                modifier = Modifier.size(17.dp)
+                                                modifier = Modifier.size(18.dp)
                                             )
                                         }
                                     }
@@ -507,7 +523,7 @@ fun MukulPlusApp() {
                                     Text(
                                         text = tab.title,
                                         color = if (isSelected) BrandRed else TextMuted,
-                                        fontSize = 8.sp,
+                                        fontSize = 8.5.sp,
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
@@ -538,6 +554,11 @@ fun MukulPlusApp() {
                             onNavigateToLiveTv = { currentTab = ScreenTab.LIVE_TV },
                             onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR },
                             onNavigateToMusic = { currentTab = ScreenTab.MUSIC }
+                        )
+                    }
+                    ScreenTab.SPORTS -> {
+                        SportsScreen(
+                            onNavigateBack = { currentTab = ScreenTab.HOME }
                         )
                     }
                     ScreenTab.MOVIES -> {

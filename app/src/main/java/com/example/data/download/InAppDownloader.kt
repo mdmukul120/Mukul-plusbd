@@ -54,6 +54,8 @@ object InAppDownloader {
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true)
+        .followSslRedirects(true)
+        .retryOnConnectionFailure(true)
         .build()
 
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())

@@ -49,20 +49,26 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
 
+    val cachedFeed by mediaRepository.cachedHomeFeed.collectAsState()
+
     // Category movie lists
-    var trendingMovies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
-    var bongoVideos by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
-    var hollywoodMovies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
-    var bollywoodMovies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
-    var banglaMovies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
-    var southActionMovies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
-    var topRatedMovies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
-    var animationMovies by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
+    var trendingMovies by remember { mutableStateOf(cachedFeed?.trendingMovies ?: emptyList()) }
+    var bongoVideos by remember { mutableStateOf(cachedFeed?.bongoVideos ?: emptyList()) }
+    var hollywoodMovies by remember { mutableStateOf(cachedFeed?.hollywoodMovies ?: emptyList()) }
+    var bollywoodMovies by remember { mutableStateOf(cachedFeed?.bollywoodMovies ?: emptyList()) }
+    var banglaMovies by remember { mutableStateOf(cachedFeed?.banglaMovies ?: emptyList()) }
+    var southActionMovies by remember { mutableStateOf(cachedFeed?.southActionMovies ?: emptyList()) }
+    var topRatedMovies by remember { mutableStateOf(cachedFeed?.topRatedMovies ?: emptyList()) }
+    var animationMovies by remember { mutableStateOf(cachedFeed?.animationMovies ?: emptyList()) }
     var providerPosts by remember { mutableStateOf<List<ExtractorPost>>(emptyList()) }
-    var liveChannels by remember { mutableStateOf<List<TvChannel>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    var liveChannels by remember { mutableStateOf(cachedFeed?.liveChannels ?: emptyList()) }
+    var isLoading by remember { mutableStateOf(cachedFeed == null || !cachedFeed!!.isLoaded) }
 
     LaunchedEffect(Unit) {
+        if (cachedFeed != null && cachedFeed!!.isLoaded && trendingMovies.isNotEmpty()) {
+            isLoading = false
+            return@LaunchedEffect
+        }
         isLoading = true
         try {
             // 1. Trending
@@ -101,6 +107,22 @@ fun HomeScreen(
 
             // 9. Extractor Posts
             providerPosts = ApiClient.fetchExtractorPosts("moviesmod", page = 1)
+
+            // Cache all home feed items
+            mediaRepository.updateCachedHomeFeed(
+                com.example.data.repository.HomeFeedData(
+                    trendingMovies = trendingMovies,
+                    bongoVideos = bongoVideos,
+                    hollywoodMovies = hollywoodMovies,
+                    bollywoodMovies = bollywoodMovies,
+                    banglaMovies = banglaMovies,
+                    southActionMovies = southActionMovies,
+                    topRatedMovies = topRatedMovies,
+                    animationMovies = animationMovies,
+                    liveChannels = liveChannels,
+                    isLoaded = true
+                )
+            )
         } catch (_: Exception) {
         } finally {
             isLoading = false

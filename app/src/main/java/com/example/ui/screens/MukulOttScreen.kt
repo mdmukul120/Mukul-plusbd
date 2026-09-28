@@ -74,13 +74,13 @@ fun MukulOttScreen(
     // ------------------------------------------------------------------------
     // Pagination & Catalog State
     // ------------------------------------------------------------------------
-    var movies by remember { mutableStateOf<List<MukulOttMovieItem>>(emptyList()) }
-    var currentPage by remember { mutableIntStateOf(1) }
+    var movies by remember { mutableStateOf<List<MukulOttMovieItem>>(MukulOttRepository.cachedMovies) }
+    var currentPage by remember { mutableIntStateOf(MukulOttRepository.cachedPage) }
     val totalPages = 200
     var isLoadingPage by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf(OttFilterType.ALL) }
     var showPageJumpDialog by remember { mutableStateOf(false) }
-    var jumpPageInput by remember { mutableStateOf("1") }
+    var jumpPageInput by remember { mutableStateOf(MukulOttRepository.cachedPage.toString()) }
 
     // ------------------------------------------------------------------------
     // Deep Search Across 1-200 Pages State
@@ -127,10 +127,13 @@ fun MukulOttScreen(
     fun loadPage(page: Int) {
         val target = page.coerceIn(1, totalPages)
         currentPage = target
+        MukulOttRepository.cachedPage = target
         coroutineScope.launch {
             isLoadingPage = true
             val loaded = MukulOttRepository.getMovies(target)
             movies = loaded
+            MukulOttRepository.cachedMovies = loaded
+            MukulOttRepository.isLoaded = true
             isLoadingPage = false
             gridState.scrollToItem(0)
         }
@@ -1707,8 +1710,14 @@ fun MukulOttMovieCard(
                 }
             }
 
-            // Title, Year, and Badges Below Image (ইমেজের নিচে)
-            Column(modifier = Modifier.padding(6.dp)) {
+            // Title, Year, and Badges Below Image (সব কার্ড একসমান)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
                     text = item.title,
                     color = TextPrimary,
@@ -1717,14 +1726,13 @@ fun MukulOttMovieCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(3.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = if (item.year > 0) "${item.year}" else "",
+                        text = if (item.year > 0) "${item.year}" else "HD",
                         color = TextMuted,
                         fontSize = 9.sp
                     )

@@ -8,6 +8,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 
+data class HomeFeedData(
+    val trendingMovies: List<CtgMovie> = emptyList(),
+    val bongoVideos: List<CtgMovie> = emptyList(),
+    val hollywoodMovies: List<CtgMovie> = emptyList(),
+    val bollywoodMovies: List<CtgMovie> = emptyList(),
+    val banglaMovies: List<CtgMovie> = emptyList(),
+    val southActionMovies: List<CtgMovie> = emptyList(),
+    val topRatedMovies: List<CtgMovie> = emptyList(),
+    val animationMovies: List<CtgMovie> = emptyList(),
+    val liveChannels: List<TvChannel> = emptyList(),
+    val isLoaded: Boolean = false
+)
+
 class MediaRepository(context: Context) {
     private val prefs = context.getSharedPreferences("mukul_plus_media_prefs", Context.MODE_PRIVATE)
 
@@ -19,6 +32,14 @@ class MediaRepository(context: Context) {
 
     private val _cachedChannels = MutableStateFlow<List<TvChannel>>(emptyList())
     val cachedChannels: StateFlow<List<TvChannel>> = _cachedChannels.asStateFlow()
+
+    // Home feed cache to prevent re-fetching and save user data when returning from other tabs
+    private val _cachedHomeFeed = MutableStateFlow<HomeFeedData?>(null)
+    val cachedHomeFeed: StateFlow<HomeFeedData?> = _cachedHomeFeed.asStateFlow()
+
+    fun updateCachedHomeFeed(feed: HomeFeedData) {
+        _cachedHomeFeed.value = feed
+    }
 
     init {
         loadFavorites()
