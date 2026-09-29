@@ -73,6 +73,7 @@ private enum class SortOrder(val label: String) {
 @Composable
 fun ExtractorScreen(
     onBack: (() -> Unit)? = null,
+    initialTab: String = "DOWNLOADS",
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -112,8 +113,10 @@ fun ExtractorScreen(
         }
     }
 
-    // Navigation and Filter States
-    var currentLarkTab by remember { mutableStateOf(LarkTab.VIDEOS) }
+    // Navigation and Filter States (Default to DOWNLOADS tab so downloaded YouTube/OTT files are seen immediately)
+    var currentLarkTab by remember {
+        mutableStateOf(if (initialTab == "DOWNLOADS") LarkTab.DOWNLOADS else LarkTab.VIDEOS)
+    }
     var searchQuery by remember { mutableStateOf("") }
     var selectedSortOrder by remember { mutableStateOf(SortOrder.RECENT) }
     var showSortMenu by remember { mutableStateOf(false) }

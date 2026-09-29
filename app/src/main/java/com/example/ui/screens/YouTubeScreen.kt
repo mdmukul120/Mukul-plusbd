@@ -245,29 +245,42 @@ fun YouTubeScreen(
                     }
                 }
 
-                // Dedicated Compact Player View (ইউটিউব ভিউ পোর্ট একটু ছোট)
+                // Dedicated Compact Hardware-Accelerated Video Player
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(185.dp)
+                        .height(200.dp)
                         .background(Color.Black)
                 ) {
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
                             WebView(ctx).apply {
-                                settings.javaScriptEnabled = true
-                                settings.domStorageEnabled = true
-                                settings.mediaPlaybackRequiresUserGesture = false
-                                settings.loadWithOverviewMode = true
-                                settings.useWideViewPort = true
-                                settings.cacheMode = WebSettings.LOAD_DEFAULT
+                                tag = currentVideo.id
+                                setBackgroundColor(android.graphics.Color.BLACK)
+                                setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null)
+                                layoutParams = android.view.ViewGroup.LayoutParams(
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                    android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+
+                                settings.apply {
+                                    javaScriptEnabled = true
+                                    domStorageEnabled = true
+                                    mediaPlaybackRequiresUserGesture = false
+                                    loadWithOverviewMode = true
+                                    useWideViewPort = true
+                                    databaseEnabled = true
+                                    allowContentAccess = true
+                                    allowFileAccess = true
+                                    cacheMode = WebSettings.LOAD_DEFAULT
+                                    mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                                    userAgentString = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+                                }
 
                                 webChromeClient = WebChromeClient()
                                 webViewClient = object : WebViewClient() {
-                                    override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean {
-                                        return false
-                                    }
+                                    override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean = false
                                 }
 
                                 val htmlData = """
@@ -277,47 +290,110 @@ fun YouTubeScreen(
                                         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
                                         <style>
                                             * { margin:0; padding:0; box-sizing:border-box; }
-                                            body, html { width:100%; height:100%; background:#000000; overflow:hidden; }
-                                            iframe { width:100%; height:100%; border:none; }
+                                            html, body { width:100%; height:100%; background:#000000; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+                                            .player-container { position:relative; width:100%; height:100%; }
+                                            iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
                                         </style>
                                     </head>
                                     <body>
-                                        <iframe 
-                                            src="https://www.youtube-nocookie.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&rel=0&modestbranding=1" 
-                                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                                            allowfullscreen>
-                                        </iframe>
+                                        <div class="player-container">
+                                            <iframe 
+                                                src="https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&enablejsapi=1&rel=0&modestbranding=1&controls=1&fs=1&origin=https://www.youtube.com" 
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                                                allowfullscreen>
+                                            </iframe>
+                                        </div>
                                     </body>
                                     </html>
                                 """.trimIndent()
 
-                                loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
+                                loadDataWithBaseURL("https://www.youtube.com", htmlData, "text/html", "UTF-8", null)
                             }
                         },
                         update = { webView ->
-                            val htmlData = """
-                                <!DOCTYPE html>
-                                <html>
-                                <head>
-                                    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                    <style>
-                                        * { margin:0; padding:0; box-sizing:border-box; }
-                                        body, html { width:100%; height:100%; background:#000000; overflow:hidden; }
-                                        iframe { width:100%; height:100%; border:none; }
-                                    </style>
-                                </head>
-                                <body>
-                                    <iframe 
-                                        src="https://www.youtube-nocookie.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&rel=0&modestbranding=1" 
-                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
-                                        allowfullscreen>
-                                    </iframe>
-                                </body>
-                                </html>
-                            """.trimIndent()
-                            webView.loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
+                            val lastId = webView.tag as? String
+                            if (lastId != currentVideo.id) {
+                                webView.tag = currentVideo.id
+                                val htmlData = """
+                                    <!DOCTYPE html>
+                                    <html>
+                                    <head>
+                                        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                        <style>
+                                            * { margin:0; padding:0; box-sizing:border-box; }
+                                            html, body { width:100%; height:100%; background:#000000; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+                                            .player-container { position:relative; width:100%; height:100%; }
+                                            iframe { position:absolute; top:0; left:0; width:100%; height:100%; border:0; }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <div class="player-container">
+                                            <iframe 
+                                                src="https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&enablejsapi=1&rel=0&modestbranding=1&controls=1&fs=1&origin=https://www.youtube.com" 
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                                                allowfullscreen>
+                                            </iframe>
+                                        </div>
+                                    </body>
+                                    </html>
+                                """.trimIndent()
+                                webView.loadDataWithBaseURL("https://www.youtube.com", htmlData, "text/html", "UTF-8", null)
+                            }
                         }
                     )
+                }
+
+                // Quick Player Action Strip
+                Surface(
+                    color = CinemaSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🎬 ফুল এইচডি ভিডিও প্লেয়ার",
+                            color = CyanAccent,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            TextButton(
+                                onClick = {
+                                    val ytIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(currentVideo.watchUrl))
+                                    try {
+                                        context.startActivity(ytIntent)
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "ইউটিউব অ্যাপ নেই", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.height(28.dp)
+                            ) {
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, tint = BrandRedLight, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("অ্যাপে দেখুন", color = BrandRedLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            IconButton(
+                                onClick = {
+                                    targetDownloadVideo = currentVideo
+                                    showResolutionDialog = true
+                                    extractionResult = null
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.CloudDownload, contentDescription = "Download", tint = TextPrimary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    }
                 }
 
                 // Video Details & Related Videos List
@@ -533,105 +609,70 @@ fun YouTubeScreen(
                     .fillMaxSize()
                     .background(CinemaBackground)
             ) {
-                // Top Header with Search Box
+                // Top Slim Responsive Header with Search Bar (চিকন ও রেসপনসিভ)
                 Surface(
                     color = CinemaSurface,
-                    tonalElevation = 4.dp,
+                    tonalElevation = 3.dp,
                     modifier = Modifier.fillMaxWidth().statusBarsPadding()
                 ) {
-                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        // YouTube Brand Header Bar
+                    Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)) {
+                        // Single unified responsive search row (Height ~40dp, well below 150px)
                         Row(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth().height(42.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (onBack != null) {
+                                IconButton(
+                                    onClick = onBack,
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                        contentDescription = "Back",
+                                        tint = TextPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            } else {
+                                // YouTube Mini Brand Badge
                                 Surface(
                                     color = BrandRed,
                                     shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier.size(28.dp, 20.dp)
+                                    modifier = Modifier.size(26.dp, 19.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(15.dp))
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "YouTube",
-                                    color = Color.White,
-                                    fontSize = 18.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = (-0.5).sp
-                                )
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                IconButton(
-                                    onClick = { loadFeed(selectedCategory) },
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = TextSecondary, modifier = Modifier.size(18.dp))
-                                }
-
-                                IconButton(
-                                    onClick = onNavigateToDownloads,
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(Icons.Default.CloudDownload, contentDescription = "Downloads", tint = CyanAccent, modifier = Modifier.size(20.dp))
-                                }
-                            }
-                        }
-
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            if (onBack != null) {
-                                Surface(
-                                    onClick = onBack,
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = CinemaSurfaceVariant,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                                    modifier = Modifier.size(46.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                            contentDescription = "Back",
-                                            tint = TextPrimary
-                                        )
+                                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(13.dp))
                                     }
                                 }
                             }
 
-                            // Custom Search Input
+                            // Slim Responsive Search Box
                             Surface(
-                                shape = RoundedCornerShape(16.dp),
+                                shape = RoundedCornerShape(20.dp),
                                 color = CinemaBackground,
                                 border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                                modifier = Modifier.weight(1f).height(48.dp)
+                                modifier = Modifier.weight(1f).height(36.dp)
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Search,
                                         contentDescription = "Search",
                                         tint = BrandRed,
-                                        modifier = Modifier.size(20.dp)
+                                        modifier = Modifier.size(17.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
                                     TextField(
                                         value = searchQuery,
                                         onValueChange = { searchQuery = it },
                                         placeholder = {
                                             Text(
-                                                "ইউটিউব ভিডিও খুঁজুন (গান, নাটক, খবর)...",
+                                                "ইউটিউব খুঁজুন...",
                                                 color = TextMuted,
-                                                fontSize = 12.5.sp
+                                                fontSize = 11.5.sp
                                             )
                                         },
                                         singleLine = true,
@@ -649,7 +690,8 @@ fun YouTubeScreen(
                                             focusedIndicatorColor = Color.Transparent,
                                             unfocusedIndicatorColor = Color.Transparent,
                                             focusedTextColor = TextPrimary,
-                                            unfocusedTextColor = TextPrimary
+                                            unfocusedTextColor = TextPrimary,
+                                            cursorColor = BrandRed
                                         ),
                                         modifier = Modifier.weight(1f)
                                     )
@@ -659,47 +701,46 @@ fun YouTubeScreen(
                                                 searchQuery = ""
                                                 loadFeed(selectedCategory)
                                             },
-                                            modifier = Modifier.size(28.dp)
+                                            modifier = Modifier.size(24.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Clear,
                                                 contentDescription = "Clear",
                                                 tint = TextMuted,
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
                                         }
                                     }
                                 }
                             }
 
-                            // Go to Downloads Folder Button
+                            // Refresh Feed Button
+                            IconButton(
+                                onClick = { loadFeed(selectedCategory, force = true) },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = TextSecondary, modifier = Modifier.size(18.dp))
+                            }
+
+                            // Downloads Folder Button
                             IconButton(
                                 onClick = onNavigateToDownloads,
-                                modifier = Modifier.size(46.dp)
+                                modifier = Modifier.size(32.dp)
                             ) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = CinemaSurfaceVariant,
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.FolderSpecial,
-                                            contentDescription = "Downloads",
-                                            tint = CyanAccent,
-                                            modifier = Modifier.size(22.dp)
-                                        )
-                                    }
-                                }
+                                Icon(
+                                    imageVector = Icons.Default.CloudDownload,
+                                    contentDescription = "Downloads",
+                                    tint = CyanAccent,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
 
-                        Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
 
-                        // Category Chips Row
+                        // Compact Category Chips Row
                         LazyRow(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             items(categories) { cat ->
@@ -710,7 +751,7 @@ fun YouTubeScreen(
                                         selectedCategory = cat.id
                                         loadFeed(category = cat.id)
                                     },
-                                    shape = RoundedCornerShape(12.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     color = if (isSelected) BrandRed else CinemaSurfaceVariant,
                                     border = androidx.compose.foundation.BorderStroke(
                                         1.dp,
@@ -719,19 +760,19 @@ fun YouTubeScreen(
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
                                     ) {
                                         Icon(
                                             imageVector = cat.icon,
                                             contentDescription = null,
                                             tint = if (isSelected) Color.White else TextMuted,
-                                            modifier = Modifier.size(14.dp)
+                                            modifier = Modifier.size(12.dp)
                                         )
-                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = cat.title,
                                             color = if (isSelected) Color.White else TextPrimary,
-                                            fontSize = 12.sp,
+                                            fontSize = 11.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                                         )
                                     }
@@ -1073,42 +1114,67 @@ fun YouTubeScreen(
                                                 }
                                             }
                                         },
-                                        shape = RoundedCornerShape(12.dp),
+                                        shape = RoundedCornerShape(10.dp),
                                         color = CinemaSurfaceVariant,
                                         border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
                                         modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Icon(
                                                 imageVector = if (resItem.isAudio) Icons.Default.MusicNote else Icons.Default.VideoLibrary,
                                                 contentDescription = null,
                                                 tint = if (resItem.isAudio) GoldRating else BrandRed,
-                                                modifier = Modifier.size(20.dp)
+                                                modifier = Modifier.size(18.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(12.dp))
+                                            Spacer(modifier = Modifier.width(10.dp))
                                             Column(modifier = Modifier.weight(1f)) {
                                                 Text(
                                                     text = resItem.title,
                                                     color = TextPrimary,
-                                                    fontSize = 13.sp,
+                                                    fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold
                                                 )
                                                 Text(
                                                     text = resItem.subtitle,
                                                     color = TextMuted,
-                                                    fontSize = 11.sp
+                                                    fontSize = 10.sp
                                                 )
                                             }
                                             Icon(
                                                 imageVector = Icons.Default.ArrowForwardIos,
                                                 contentDescription = null,
                                                 tint = TextMuted,
-                                                modifier = Modifier.size(12.dp)
+                                                modifier = Modifier.size(11.dp)
                                             )
                                         }
+                                    }
+                                }
+
+                                item {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            val browserUrl = YouTubeDownloaderHelper.getBrowserDownloadUrl(videoToDownload.id)
+                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(browserUrl))
+                                            try {
+                                                context.startActivity(intent)
+                                                showResolutionDialog = false
+                                                targetDownloadVideo = null
+                                            } catch (_: Exception) {
+                                                Toast.makeText(context, "ব্রাউজার খোলা যায়নি", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f)),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanAccent),
+                                        modifier = Modifier.fillMaxWidth().height(38.dp)
+                                    ) {
+                                        Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("🌐 ব্রাউজারে দ্রুত ডাউনলোড (SaveFrom)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -1121,7 +1187,7 @@ fun YouTubeScreen(
 }
 
 /**
- * Sleek YouTube Video Card matching user uploaded image (ছবির মতো কার্ড)
+ * Slim & Sleek YouTube Video Card (চিকন ও সরু কার্ড ডিজাইন)
  */
 @Composable
 private fun YouTubeVideoCard(
@@ -1130,26 +1196,26 @@ private fun YouTubeVideoCard(
     onDownloadClick: () -> Unit
 ) {
     Card(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = CinemaSurface),
         border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp)
+            .padding(horizontal = 10.dp, vertical = 2.dp)
             .clickable(onClick = onPlayClick)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(10.dp),
+                .padding(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: Photo Container with 16:9 Thumbnail, HD badge & duration
+            // Left: Compact 16:9 Thumbnail
             Box(
                 modifier = Modifier
-                    .size(width = 135.dp, height = 84.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .size(width = 105.dp, height = 64.dp)
+                    .clip(RoundedCornerShape(8.dp))
                     .background(CinemaSurfaceVariant)
             ) {
                 AsyncImage(
@@ -1168,18 +1234,18 @@ private fun YouTubeVideoCard(
                     Text(
                         text = "HD",
                         color = Color.White,
-                        fontSize = 8.5.sp,
+                        fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
                     )
                 }
 
                 // Play icon in center
                 Surface(
                     shape = CircleShape,
-                    color = Color.Black.copy(alpha = 0.55f),
+                    color = Color.Black.copy(alpha = 0.5f),
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(24.dp)
                         .align(Alignment.Center)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -1187,7 +1253,7 @@ private fun YouTubeVideoCard(
                             imageVector = Icons.Default.PlayArrow,
                             contentDescription = "Play",
                             tint = Color.White,
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(15.dp)
                         )
                     }
                 }
@@ -1196,25 +1262,25 @@ private fun YouTubeVideoCard(
                 if (video.duration.isNotEmpty()) {
                     Surface(
                         color = Color.Black.copy(alpha = 0.85f),
-                        shape = RoundedCornerShape(4.dp),
+                        shape = RoundedCornerShape(3.dp),
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .padding(4.dp)
+                            .padding(2.dp)
                     ) {
                         Text(
                             text = video.duration,
                             color = Color.White,
-                            fontSize = 9.sp,
+                            fontSize = 8.sp,
                             fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                            modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.width(9.dp))
 
-            // Right: Video Title, Channel, Stats, and Action Buttons
+            // Right: Video Title, Channel, Stats, and Slim Action Buttons
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center
@@ -1222,61 +1288,41 @@ private fun YouTubeVideoCard(
                 Text(
                     text = video.title,
                     color = TextPrimary,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = 16.5.sp
+                    lineHeight = 15.sp
                 )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Channel Info Row
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Surface(
-                        shape = CircleShape,
-                        color = BrandRed,
-                        modifier = Modifier.size(16.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = video.channelTitle.firstOrNull()?.uppercase() ?: "Y",
-                                color = Color.White,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = video.channelTitle,
-                        color = TextSecondary,
-                        fontSize = 10.5.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
 
                 Spacer(modifier = Modifier.height(2.dp))
 
-                // Views & Date
-                Text(
-                    text = buildString {
-                        if (video.viewCount.isNotEmpty()) append(video.viewCount)
-                        if (video.publishedTime.isNotEmpty()) {
-                            if (isNotEmpty()) append(" • ")
-                            append(video.publishedTime)
-                        }
-                    }.ifEmpty { "YouTube Video" },
-                    color = TextMuted,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                // Channel Info & Views in compact row
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = video.channelTitle,
+                        color = TextSecondary,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (video.viewCount.isNotEmpty()) {
+                        Text(
+                            text = " • ${video.viewCount}",
+                            color = TextMuted,
+                            fontSize = 9.5.sp,
+                            maxLines = 1
+                        )
+                    }
+                }
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
-                // Direct Action Buttons: Play & Download
+                // Direct Action Buttons: Slim Play & Download
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -1284,31 +1330,31 @@ private fun YouTubeVideoCard(
                 ) {
                     FilledTonalButton(
                         onClick = onPlayClick,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         colors = ButtonDefaults.filledTonalButtonColors(
                             containerColor = CinemaSurfaceVariant,
                             contentColor = TextPrimary
                         ),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("প্লে", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(11.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("প্লে", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(modifier = Modifier.width(6.dp))
 
                     Button(
                         onClick = onDownloadClick,
-                        shape = RoundedCornerShape(8.dp),
+                        shape = RoundedCornerShape(6.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
+                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 1.dp),
+                        modifier = Modifier.height(24.dp)
                     ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(13.dp))
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text("ডাউনলোড", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(11.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("ডাউনলোড", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

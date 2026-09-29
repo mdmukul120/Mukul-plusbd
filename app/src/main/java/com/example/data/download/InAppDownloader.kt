@@ -160,40 +160,51 @@ object InAppDownloader {
     }
 
     private fun scanExistingFiles(context: Context) {
-        val dir = getDownloadDirectory(context)
-        val files = dir.listFiles { f ->
-            if (!f.isFile) return@listFiles false
-            val n = f.name.lowercase()
-            n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".webm") || n.endsWith(".m4a") || n.endsWith(".mp3")
-        } ?: return
+        val dirsToScan = listOfNotNull(
+            getDownloadDirectory(context),
+            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES),
+            File(context.filesDir, "downloads")
+        )
 
         val existingMap = _completedDownloads.value.associateBy { it.filePath }.toMutableMap()
         val list = mutableListOf<DownloadTask>()
 
-        for (f in files) {
-            val existing = existingMap[f.absolutePath]
-            if (existing != null) {
-                list.add(existing)
-            } else {
-                val name = f.nameWithoutExtension
-                val task = DownloadTask(
-                    id = f.name,
-                    movieSlug = name,
-                    title = name.replace("_", " "),
-                    poster = "",
-                    quality = if (f.name.contains("1080")) "1080p" else if (f.name.contains("720")) "720p" else "480p",
-                    downloadUrl = "",
-                    status = DownloadStatus.COMPLETED,
-                    progress = 1.0f,
-                    downloadedBytes = f.length(),
-                    totalBytes = f.length(),
-                    speedText = "ডাউনলোড সম্পন্ন",
-                    filePath = f.absolutePath
-                )
-                list.add(task)
+        for (dir in dirsToScan) {
+            if (!dir.exists()) continue
+            val files = dir.listFiles { f ->
+                if (!f.isFile) return@listFiles false
+                val n = f.name.lowercase()
+                n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".webm") || n.endsWith(".m4a") || n.endsWith(".mp3")
+            } ?: continue
+
+            for (f in files) {
+                val existing = existingMap[f.absolutePath]
+                if (existing != null) {
+                    list.add(existing)
+                } else {
+                    val name = f.nameWithoutExtension
+                    val isAudio = f.name.endsWith(".mp3") || f.name.endsWith(".m4a")
+                    val task = DownloadTask(
+                        id = f.name,
+                        movieSlug = name,
+                        title = name.replace("_", " "),
+                        poster = "",
+                        quality = if (isAudio) "MP3" else if (f.name.contains("1080")) "1080p" else if (f.name.contains("720")) "720p" else "HD",
+                        downloadUrl = "",
+                        status = DownloadStatus.COMPLETED,
+                        progress = 1.0f,
+                        downloadedBytes = f.length(),
+                        totalBytes = f.length(),
+                        speedText = "অফলাইন প্রস্তুত",
+                        filePath = f.absolutePath
+                    )
+                    list.add(task)
+                    existingMap[f.absolutePath] = task
+                }
             }
         }
-        _completedDownloads.value = list
+        _completedDownloads.value = list.distinctBy { it.filePath }
         persistCompletedDownloads(context)
     }
 
@@ -349,6 +360,15 @@ object InAppDownloader {
             currentCompleted.add(0, completedTask)
             _completedDownloads.value = currentCompleted
             persistCompletedDownloads(context)
+
+            try {
+                android.media.MediaScannerConnection.scanFile(
+                    context.applicationContext,
+                    arrayOf(targetFile.absolutePath),
+                    null,
+                    null
+                )
+            } catch (_: Exception) {}
 
         } catch (e: CancellationException) {
             updateTask(task.copy(status = DownloadStatus.CANCELLED, speedText = "বাতিল করা হয়েছে"))

@@ -58,6 +58,23 @@ object YouTubeApiService {
     private val searchCache = java.util.concurrent.ConcurrentHashMap<String, List<YouTubeVideoItem>>()
     private val trendingCache = java.util.concurrent.ConcurrentHashMap<String, List<YouTubeVideoItem>>()
     private val reelsCache = java.util.concurrent.ConcurrentHashMap<String, List<YouTubeReelItem>>()
+    private var lastCachedDate: String = ""
+
+    private fun getTodayDate(): String =
+        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+
+    private fun checkAndInvalidateDailyCache() {
+        val today = getTodayDate()
+        if (lastCachedDate.isNotEmpty() && lastCachedDate != today) {
+            // New day has arrived: automatically purge cache to fetch fresh daily videos
+            searchCache.clear()
+            trendingCache.clear()
+            reelsCache.clear()
+            YouTubeFeedCache.cachedVideos = emptyList()
+            YouTubeFeedCache.isLoaded = false
+        }
+        lastCachedDate = today
+    }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(12, TimeUnit.SECONDS)
@@ -66,14 +83,15 @@ object YouTubeApiService {
         .build()
 
     /**
-     * Search videos via YouTube Data API v3 with automatic fallback and memory cache
+     * Search videos via YouTube Data API v3 with automatic fallback and memory cache (50 videos)
      */
     suspend fun searchVideos(
         query: String,
-        maxResults: Int = 20,
+        maxResults: Int = 50,
         forceRefresh: Boolean = false
     ): List<YouTubeVideoItem> = withContext(Dispatchers.IO) {
-        val trimmed = query.trim().ifEmpty { "trending bangla" }
+        checkAndInvalidateDailyCache()
+        val trimmed = query.trim().ifEmpty { "trending bangla 2026" }
         val cacheKey = "${trimmed}_$maxResults"
         if (!forceRefresh) {
             val cached = searchCache[cacheKey]
@@ -82,7 +100,7 @@ object YouTubeApiService {
         // 1. Try official YouTube Data API v3 first
         try {
             val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
-            val url = "https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=$maxResults&q=$encodedQuery&type=video&key=$API_KEY"
+            val url = "https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=$maxResults&q=$encodedQuery&type=video&regionCode=BD&key=$API_KEY"
 
             val req = Request.Builder()
                 .url(url)
@@ -129,7 +147,11 @@ object YouTubeApiService {
                         }
 
                         // Enrich with duration and views if possible
-                        return@withContext enrichVideoDetails(list, videoIds)
+                        val enriched = enrichVideoDetails(list, videoIds)
+                        if (enriched.isNotEmpty()) {
+                            searchCache[cacheKey] = enriched
+                            return@withContext enriched
+                        }
                     }
                 }
             } else {
@@ -139,7 +161,7 @@ object YouTubeApiService {
             Log.w(TAG, "YouTube v3 API call exception: ${e.message}, switching to fallback")
         }
 
-        // 2. Reliable Scraper Fallback (Never leaves user with empty/broken state)
+        // 2. Reliable Scraper Fallback (Loads up to 50 videos)
         val fallback = fallbackScrapeSearch(trimmed)
         if (fallback.isNotEmpty()) {
             searchCache[cacheKey] = fallback
@@ -148,32 +170,33 @@ object YouTubeApiService {
     }
 
     /**
-     * Get Trending / Popular videos (Home Feed)
+     * Get Trending / Popular videos (Home Feed) - 50 videos with daily automatic update
      */
     suspend fun getTrendingVideos(
         category: String = "",
         forceRefresh: Boolean = false
     ): List<YouTubeVideoItem> = withContext(Dispatchers.IO) {
+        checkAndInvalidateDailyCache()
         if (!forceRefresh) {
             val cached = trendingCache[category]
             if (!cached.isNullOrEmpty()) return@withContext cached
         }
 
         val query = when (category) {
-            "bangla_song" -> "bangla new song official video"
+            "bangla_song" -> "bangla new song official video 2026"
             "natok" -> "bangla natok new 2026"
-            "movie_trailer" -> "movie trailer bangla hindi english"
-            "hindi_song" -> "latest hindi song bollywood"
+            "movie_trailer" -> "movie trailer bangla hindi 2026"
+            "hindi_song" -> "latest hindi song bollywood 2026"
             "islamic" -> "bangla islamic waz gojol"
             "news" -> "bangla live news channel"
             "gaming" -> "gaming video bangla"
-            else -> "bangla trending entertainment videos"
+            else -> "bangladesh trending entertainment"
         }
 
-        // Try YouTube Data API v3 Most Popular
+        // Try YouTube Data API v3 Most Popular (50 videos maxResults)
         if (category.isEmpty()) {
             try {
-                val url = "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&chart=mostPopular&regionCode=BD&maxResults=24&key=$API_KEY"
+                val url = "https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&chart=mostPopular&regionCode=BD&maxResults=50&key=$API_KEY"
                 val req = Request.Builder()
                     .url(url)
                     .header("User-Agent", "MukulPlusApp/1.0")
@@ -225,6 +248,13 @@ object YouTubeApiService {
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Trending v3 API failed: ${e.message}")
+            }
+        } else {
+            // For category, perform 50 items search
+            val catVideos = searchVideos(query, maxResults = 50, forceRefresh = forceRefresh)
+            if (catVideos.isNotEmpty()) {
+                trendingCache[category] = catVideos
+                return@withContext catVideos
             }
         }
 
@@ -425,25 +455,33 @@ object YouTubeApiService {
 
     /**
      * Fetch YouTube Shorts / Reels using YouTube Data API v3 with automatic fallback and pagination
+     * Focuses on daily Bangladesh newest reels with search support
      */
     suspend fun getYouTubeReels(
         category: String = "all",
-        pageToken: String = ""
+        pageToken: String = "",
+        searchQuery: String = ""
     ): YouTubeReelsResult = withContext(Dispatchers.IO) {
-        val query = when (category) {
-            "viral" -> "#shorts viral bangla trending"
-            "comedy" -> "bangla funny comedy shorts #shorts"
-            "music" -> "trending song music shorts reels"
-            "natok" -> "bangla natok clips scene shorts"
-            "islamic" -> "islamic status shorts waz gojol"
-            else -> "#shorts trending bangla reels"
+        checkAndInvalidateDailyCache()
+
+        val query = if (searchQuery.isNotBlank()) {
+            "${searchQuery.trim()} #shorts reels"
+        } else {
+            when (category) {
+                "viral" -> "#shorts viral bangladesh trending today"
+                "comedy" -> "bangla funny comedy shorts reels #shorts"
+                "music" -> "trending bangla song music shorts reels 2026"
+                "natok" -> "bangla natok best scene shorts reels"
+                "islamic" -> "bangla islamic status shorts waz gojol"
+                else -> "#shorts bangladesh daily trending reels 2026"
+            }
         }
 
         // 1. Try official YouTube Data API v3
         try {
             val encodedQuery = URLEncoder.encode(query, "UTF-8")
             val tokenParam = if (pageToken.isNotEmpty()) "&pageToken=${URLEncoder.encode(pageToken, "UTF-8")}" else ""
-            val url = "https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=15&q=$encodedQuery&type=video&videoDuration=short&order=date&key=$API_KEY$tokenParam"
+            val url = "https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=$encodedQuery&type=video&videoDuration=short&order=date&regionCode=BD&key=$API_KEY$tokenParam"
 
             val req = Request.Builder()
                 .url(url)

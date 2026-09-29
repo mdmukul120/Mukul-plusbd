@@ -401,7 +401,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.REELS) {
+                if (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.REELS && currentTab != ScreenTab.SPORTS) {
                     Surface(
                         color = CinemaSurface,
                         tonalElevation = 3.dp,

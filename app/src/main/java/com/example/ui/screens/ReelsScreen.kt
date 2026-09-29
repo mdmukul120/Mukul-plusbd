@@ -73,6 +73,7 @@ fun ReelsScreen(
 
     // Screen State
     var reelsList by remember { mutableStateOf<List<YouTubeReelItem>>(emptyList()) }
+    var searchQuery by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     var isLoadingMore by remember { mutableStateOf(false) }
     var nextPageToken by remember { mutableStateOf("") }
@@ -88,15 +89,15 @@ fun ReelsScreen(
     var showCommentsSheet by remember { mutableStateOf(false) }
     var activeCommentsReel by remember { mutableStateOf<YouTubeReelItem?>(null) }
 
-    // Load initial reels
-    fun loadReels(category: String, reset: Boolean = false) {
+    // Load initial reels with search support and daily updates
+    fun loadReels(category: String = selectedCategory, query: String = searchQuery, reset: Boolean = false) {
         coroutineScope.launch {
             if (reset) {
                 isLoading = true
                 nextPageToken = ""
             }
             try {
-                val res = YouTubeApiService.getYouTubeReels(category = category, pageToken = "")
+                val res = YouTubeApiService.getYouTubeReels(category = category, pageToken = "", searchQuery = query)
                 reelsList = res.items
                 nextPageToken = res.nextPageToken
             } catch (e: Exception) {
@@ -113,7 +114,7 @@ fun ReelsScreen(
         coroutineScope.launch {
             isLoadingMore = true
             try {
-                val res = YouTubeApiService.getYouTubeReels(category = selectedCategory, pageToken = nextPageToken)
+                val res = YouTubeApiService.getYouTubeReels(category = selectedCategory, pageToken = nextPageToken, searchQuery = searchQuery)
                 val newItems = res.items.filter { newItem -> reelsList.none { it.id == newItem.id } }
                 if (newItems.isNotEmpty()) {
                     reelsList = reelsList + newItems
@@ -127,7 +128,7 @@ fun ReelsScreen(
     }
 
     LaunchedEffect(selectedCategory) {
-        loadReels(selectedCategory, reset = true)
+        loadReels(selectedCategory, query = searchQuery, reset = true)
     }
 
     Box(
@@ -245,106 +246,146 @@ fun ReelsScreen(
             }
         }
 
-        // Floating Top Overlay: Category chips & Refresh Button
+        // Floating Top Overlay: Slim Search Bar & Category chips
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .statusBarsPadding()
                 .padding(top = 4.dp)
         ) {
+            // Slim Search Row (চিকন সার্চবার ও রিফ্রেশ বাটন)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (onNavigateBack != null) {
-                        IconButton(
-                            onClick = onNavigateBack,
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ArrowBack,
-                                contentDescription = "Back",
-                                tint = Color.White
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(4.dp))
-                    }
-
-                    // Reels Badge
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.5f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .background(BrandRed, CircleShape)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "রিলস • Shorts",
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    // New Reels / Refresh Button (অটো আপডেট ও রিফ্রেশ)
+                if (onNavigateBack != null) {
                     IconButton(
-                        onClick = { loadReels(selectedCategory, reset = true) },
+                        onClick = onNavigateBack,
                         modifier = Modifier
                             .size(34.dp)
-                            .background(Color.Black.copy(alpha = 0.5f), CircleShape)
+                            .background(Color.Black.copy(alpha = 0.55f), CircleShape)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh Reels",
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back",
                             tint = Color.White,
                             modifier = Modifier.size(18.dp)
                         )
                     }
+                }
 
-                    if (onNavigateToProfile != null) {
+                // Slim Responsive Search Bar
+                Surface(
+                    shape = RoundedCornerShape(18.dp),
+                    color = Color.Black.copy(alpha = 0.65f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                    modifier = Modifier.weight(1f).height(36.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Search,
+                            contentDescription = "Search Reels",
+                            tint = BrandRed,
+                            modifier = Modifier.size(16.dp)
+                        )
                         Spacer(modifier = Modifier.width(6.dp))
-                        IconButton(
-                            onClick = onNavigateToProfile,
-                            modifier = Modifier.size(34.dp)
-                        ) {
-                            Surface(
-                                color = BrandRed,
-                                shape = CircleShape,
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = "Profile",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(16.dp)
-                                    )
+                        TextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = {
+                                Text(
+                                    "বাংলাদেশি রিলস খুঁজুন...",
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontSize = 11.5.sp
+                                )
+                            },
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                imeAction = androidx.compose.ui.text.input.ImeAction.Search
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onSearch = {
+                                    loadReels(selectedCategory, query = searchQuery, reset = true)
                                 }
+                            ),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = BrandRed
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    searchQuery = ""
+                                    loadReels(selectedCategory, query = "", reset = true)
+                                },
+                                modifier = Modifier.size(22.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Clear,
+                                    contentDescription = "Clear",
+                                    tint = Color.White.copy(alpha = 0.7f),
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // New Reels / Refresh Button (অটো আপডেট ও রিফ্রেশ)
+                IconButton(
+                    onClick = { loadReels(selectedCategory, query = searchQuery, reset = true) },
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(Color.Black.copy(alpha = 0.55f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh Reels",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                if (onNavigateToProfile != null) {
+                    IconButton(
+                        onClick = onNavigateToProfile,
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Surface(
+                            color = BrandRed,
+                            shape = CircleShape,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Profile",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
                             }
                         }
                     }
                 }
             }
 
-            // Category Chips Row
+            // Category Chips Row (বাংলাদেশ ভাইরাল, গান, নাটক, কমেডি ইত্যাদি)
             val categories = listOf(
-                Pair("all", "সব"),
-                Pair("viral", "🔥 ভাইরাল"),
+                Pair("all", "🔥 সব"),
+                Pair("viral", "🇧🇩 ভাইরাল"),
                 Pair("comedy", "😂 কমেডি"),
                 Pair("music", "🎵 গান"),
                 Pair("natok", "🎭 নাটক"),
@@ -353,14 +394,17 @@ fun ReelsScreen(
 
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 items(categories) { (key, label) ->
-                    val isSelected = selectedCategory == key
+                    val isSelected = selectedCategory == key && searchQuery.isBlank()
                     Surface(
-                        onClick = { selectedCategory = key },
-                        shape = RoundedCornerShape(14.dp),
+                        onClick = {
+                            searchQuery = ""
+                            selectedCategory = key
+                        },
+                        shape = RoundedCornerShape(12.dp),
                         color = if (isSelected) BrandRed else Color.Black.copy(alpha = 0.6f),
                         border = androidx.compose.foundation.BorderStroke(
                             1.dp,
@@ -370,9 +414,9 @@ fun ReelsScreen(
                         Text(
                             text = label,
                             color = Color.White,
-                            fontSize = 11.5.sp,
+                            fontSize = 11.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp)
                         )
                     }
                 }
