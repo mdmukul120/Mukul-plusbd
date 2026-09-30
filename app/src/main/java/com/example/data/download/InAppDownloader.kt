@@ -259,7 +259,12 @@ object InAppDownloader {
     }
 
     private suspend fun runDownload(context: Context, task: DownloadTask) {
-        updateTask(task.copy(status = DownloadStatus.DOWNLOADING, progress = 0f))
+        val initialTask = task.copy(status = DownloadStatus.DOWNLOADING, progress = 0f)
+        updateTask(initialTask)
+
+        // Load thumbnail bitmap for notification
+        val posterBitmap = DownloadNotificationHelper.loadPosterBitmap(context, task.poster)
+        DownloadNotificationHelper.showDownloadProgress(context, initialTask, posterBitmap)
 
         val downloadDir = getDownloadDirectory(context)
         val safeId = task.id.replace("[^a-zA-Z0-9_-]".toRegex(), "_")
@@ -272,7 +277,7 @@ object InAppDownloader {
         try {
             val requestBuilder = Request.Builder()
                 .url(task.downloadUrl)
-                .header("User-Agent", "Mozilla/5.0 (Android; MukulPlusApp/1.0)")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
                 .header("Accept", "*/*")
 
             if (task.downloadUrl.contains("dramalinkbd.tv") || task.downloadUrl.contains("mukul-ott")) {
@@ -283,23 +288,17 @@ object InAppDownloader {
             val response = client.newCall(request).execute()
 
             if (!response.isSuccessful) {
-                updateTask(
-                    task.copy(
-                        status = DownloadStatus.FAILED,
-                        errorMessage = "সার্ভার এরর: HTTP ${response.code}"
-                    )
-                )
+                val err = "সার্ভার এরর: HTTP ${response.code}"
+                updateTask(task.copy(status = DownloadStatus.FAILED, errorMessage = err))
+                DownloadNotificationHelper.showDownloadFailed(context, task, err)
                 return
             }
 
             val body = response.body
             if (body == null) {
-                updateTask(
-                    task.copy(
-                        status = DownloadStatus.FAILED,
-                        errorMessage = "ডাউনলোড ফাইল পাওয়া যায়নি"
-                    )
-                )
+                val err = "ডাউনলোড ফাইল পাওয়া যায়নি"
+                updateTask(task.copy(status = DownloadStatus.FAILED, errorMessage = err))
+                DownloadNotificationHelper.showDownloadFailed(context, task, err)
                 return
             }
 
@@ -327,16 +326,18 @@ object InAppDownloader {
 
                     val progress = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else 0f
 
-                    updateTask(
-                        task.copy(
-                            status = DownloadStatus.DOWNLOADING,
-                            downloadedBytes = downloadedBytes,
-                            totalBytes = totalBytes,
-                            progress = progress,
-                            speedText = speedText,
-                            filePath = targetFile.absolutePath
-                        )
+                    val progressTask = task.copy(
+                        status = DownloadStatus.DOWNLOADING,
+                        downloadedBytes = downloadedBytes,
+                        totalBytes = totalBytes,
+                        progress = progress,
+                        speedText = speedText,
+                        filePath = targetFile.absolutePath
                     )
+                    updateTask(progressTask)
+
+                    // Real-time notification with image and progress bar
+                    DownloadNotificationHelper.showDownloadProgress(context, progressTask, posterBitmap)
 
                     lastUpdateTime = now
                     bytesSinceLastUpdate = 0L
@@ -355,6 +356,9 @@ object InAppDownloader {
             )
             updateTask(completedTask)
 
+            // Show completed notification with image and play button
+            DownloadNotificationHelper.showDownloadCompleted(context, completedTask, posterBitmap)
+
             val currentCompleted = _completedDownloads.value.toMutableList()
             currentCompleted.removeAll { it.id == completedTask.id }
             currentCompleted.add(0, completedTask)
@@ -372,15 +376,18 @@ object InAppDownloader {
 
         } catch (e: CancellationException) {
             updateTask(task.copy(status = DownloadStatus.CANCELLED, speedText = "বাতিল করা হয়েছে"))
+            DownloadNotificationHelper.cancelNotification(context, task.id)
             if (targetFile.exists()) targetFile.delete()
         } catch (e: Exception) {
             Log.e(TAG, "Download failed for ${task.title}", e)
+            val err = e.message ?: "ডাউনলোড ব্যর্থ হয়েছে"
             updateTask(
                 task.copy(
                     status = DownloadStatus.FAILED,
-                    errorMessage = e.message ?: "ডাউনলোড ব্যর্থ হয়েছে"
+                    errorMessage = err
                 )
             )
+            DownloadNotificationHelper.showDownloadFailed(context, task, err)
         } finally {
             try {
                 inputStream?.close()

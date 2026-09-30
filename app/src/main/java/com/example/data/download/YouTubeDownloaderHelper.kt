@@ -109,13 +109,8 @@ object YouTubeDownloaderHelper {
 
         onProgressStatus("ডাউনলোড লিঙ্ক তৈরি হচ্ছে...")
 
-        // Method 1: Instant Direct Invidious Proxy Streams (Under 1 second response)
+        // Method 1: Invidious API Streams (Extracts real direct MP4 streams)
         try {
-            val itag = when {
-                format.equals("mp3", ignoreCase = true) -> "140"
-                format == "720" -> "22"
-                else -> "18" // 360p standard direct stream
-            }
             val invidiousHosts = listOf(
                 "https://inv.nadeko.net",
                 "https://invidious.nerdvpn.de",
@@ -124,14 +119,80 @@ object YouTubeDownloaderHelper {
 
             for (host in invidiousHosts) {
                 try {
+                    val apiUrl = "$host/api/v1/videos/$videoId"
+                    val apiReq = Request.Builder()
+                        .url(apiUrl)
+                        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                        .build()
+                    val res = client.newCall(apiReq).execute()
+                    val body = res.body?.string().orEmpty()
+                    if (res.isSuccessful && body.isNotEmpty()) {
+                        val json = JSONObject(body)
+                        val title = json.optString("title", defaultTitle)
+                        val formatStreams = json.optJSONArray("formatStreams")
+                        if (formatStreams != null && formatStreams.length() > 0) {
+                            var matchedUrl: String? = null
+                            for (i in 0 until formatStreams.length()) {
+                                val streamObj = formatStreams.getJSONObject(i)
+                                val q = streamObj.optString("qualityLabel", "")
+                                val container = streamObj.optString("container", "mp4")
+                                val sUrl = streamObj.optString("url", "")
+                                if (format == "720" && q.contains("720") && sUrl.isNotEmpty()) {
+                                    matchedUrl = sUrl
+                                    break
+                                } else if (format == "360" && q.contains("360") && sUrl.isNotEmpty()) {
+                                    matchedUrl = sUrl
+                                    break
+                                } else if (format == "1080" && (q.contains("1080") || q.contains("720")) && sUrl.isNotEmpty()) {
+                                    matchedUrl = sUrl
+                                    break
+                                }
+                            }
+                            if (matchedUrl == null && formatStreams.length() > 0) {
+                                matchedUrl = formatStreams.getJSONObject(0).optString("url", "")
+                            }
+                            if (!matchedUrl.isNullOrEmpty()) {
+                                onProgressStatus("ডাউনলোড প্রস্তুত!")
+                                return@withContext Result.success(
+                                    ExtractionResult(
+                                        downloadUrl = matchedUrl,
+                                        title = title,
+                                        thumbnail = defaultThumb,
+                                        format = format,
+                                        videoId = videoId
+                                    )
+                                )
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Method 1 Invidious API check notice: ${e.message}")
+        }
+
+        // Method 1b: Direct Invidious Proxy Stream
+        try {
+            val itag = when {
+                format.equals("mp3", ignoreCase = true) -> "140"
+                format == "720" -> "22"
+                else -> "18" // 360p standard direct stream
+            }
+            val invidiousHosts = listOf(
+                "https://inv.nadeko.net",
+                "https://invidious.nerdvpn.de"
+            )
+
+            for (host in invidiousHosts) {
+                try {
                     val directUrl = "$host/latest_version?id=$videoId&itag=$itag"
                     val testReq = Request.Builder()
                         .url(directUrl)
-                        .head()
+                        .header("Range", "bytes=0-1024")
                         .header("User-Agent", "Mozilla/5.0")
                         .build()
                     val res = client.newCall(testReq).execute()
-                    if (res.isSuccessful || res.code in 300..399) {
+                    if (res.isSuccessful || res.code in 200..399) {
                         onProgressStatus("ডাউনলোড প্রস্তুত!")
                         return@withContext Result.success(
                             ExtractionResult(
@@ -145,9 +206,7 @@ object YouTubeDownloaderHelper {
                     }
                 } catch (_: Exception) {}
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Method 1 direct stream check passed: ${e.message}")
-        }
+        } catch (_: Exception) {}
 
         // Method 2: Rapid Downclip / Savenow (Max 2 quick attempts = ~800ms)
         try {

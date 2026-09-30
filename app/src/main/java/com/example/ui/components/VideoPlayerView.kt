@@ -150,10 +150,13 @@ fun VideoPlayerView(
             .setReadTimeoutMs(25000)
 
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
-        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+        val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
+        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 
         ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
             .build().apply {
                 playWhenReady = true
                 videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
@@ -180,6 +183,10 @@ fun VideoPlayerView(
                         .apply {
                             if (isHls) {
                                 setMimeType(MimeTypes.APPLICATION_M3U8)
+                            } else if (playableUrl.contains(".mkv", ignoreCase = true) || playableUrl.contains("matroska", ignoreCase = true)) {
+                                setMimeType(MimeTypes.VIDEO_MATROSKA)
+                            } else if (playableUrl.contains(".mp4", ignoreCase = true)) {
+                                setMimeType(MimeTypes.VIDEO_MP4)
                             }
                         }
                         .build()
@@ -279,11 +286,33 @@ fun VideoPlayerView(
         }
     }
 
-    // Auto-hide controls after 4.5 seconds
-    LaunchedEffect(showControls, isPlaying, isScreenLocked) {
-        if (showControls && isPlaying && !isScreenLocked) {
-            delay(4500)
+    var userInteractionTrigger by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    // Auto-hide controls and progress bar after exactly 2 seconds of inactivity
+    LaunchedEffect(showControls, isPlaying, isDraggingSlider, isScreenLocked, userInteractionTrigger) {
+        if (showControls && isPlaying && !isDraggingSlider && !isScreenLocked) {
+            delay(2000)
             showControls = false
+        }
+    }
+
+    // Fullscreen Immersive Mode and System Bars handling
+    val activity = context.findActivity()
+    DisposableEffect(isFullScreen) {
+        com.example.data.util.VideoPlayerState.isFullScreen = isFullScreen
+        if (isFullScreen && activity != null) {
+            val window = activity.window
+            val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+            insetsController.systemBarsBehavior = androidx.core.view.WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insetsController.hide(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            com.example.data.util.VideoPlayerState.isFullScreen = false
+            if (activity != null) {
+                val window = activity.window
+                val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
@@ -300,6 +329,7 @@ fun VideoPlayerView(
                 indication = null
             ) {
                 showControls = !showControls
+                userInteractionTrigger = System.currentTimeMillis()
             }
     ) {
         // TextureView PlayerView from XML layout (fixes the black screen issue completely!)
@@ -706,11 +736,14 @@ fun VideoPlayerView(
                         onValueChange = { newPos ->
                             isDraggingSlider = true
                             sliderDragPosition = newPos
+                            userInteractionTrigger = System.currentTimeMillis()
                         },
                         onValueChangeFinished = {
-                            exoPlayer.seekTo(sliderDragPosition.toLong())
-                            currentPosition = sliderDragPosition.toLong()
+                            val targetMs = sliderDragPosition.toLong()
+                            exoPlayer.seekTo(targetMs)
+                            currentPosition = targetMs
                             isDraggingSlider = false
+                            userInteractionTrigger = System.currentTimeMillis()
                         },
                         valueRange = 0f..effectiveDuration.toFloat(),
                         colors = SliderDefaults.colors(
@@ -737,67 +770,52 @@ fun VideoPlayerView(
                             fontWeight = FontWeight.SemiBold
                         )
 
-                        // Controller 4: Fullscreen Toggle
-                        if (onFullScreenToggle != null) {
-                            IconButton(onClick = onFullScreenToggle) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Controller: Screen Rotate Toggle (স্ক্রিন রোটেট)
+                            IconButton(
+                                onClick = {
+                                    val act = context.findActivity()
+                                    if (act != null) {
+                                        val orientation = act.resources.configuration.orientation
+                                        if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) {
+                                            act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                        } else {
+                                            act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                        }
+                                        userInteractionTrigger = System.currentTimeMillis()
+                                    }
+                                },
+                                modifier = Modifier.size(34.dp)
+                            ) {
                                 Icon(
-                                    imageVector = if (isFullScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                    contentDescription = "Toggle Fullscreen",
+                                    imageVector = Icons.Default.ScreenRotation,
+                                    contentDescription = "Screen Rotate",
                                     tint = Color.White,
-                                    modifier = Modifier.size(26.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
+
+                            // Controller 4: Fullscreen Toggle
+                            if (onFullScreenToggle != null) {
+                                IconButton(
+                                    onClick = {
+                                        onFullScreenToggle()
+                                        userInteractionTrigger = System.currentTimeMillis()
+                                    },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isFullScreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                        contentDescription = "Toggle Fullscreen",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(26.dp)
+                                    )
+                                }
+                            }
                         }
-                    }
-                }
-            }
-        }
-
-        // Always-visible Interactive Progress Bar at bottom when controls are hidden (টেনে দেখার সুযোগ)
-        if (!showControls && !isScreenLocked) {
-            val fallbackDur = if (totalDuration > 0) totalDuration else exoPlayer.duration.coerceAtLeast(0L)
-            val effectiveDuration = if (fallbackDur > 0) fallbackDur else 1L
-            val progressFraction = if (effectiveDuration > 1L) (currentPosition.toFloat() / effectiveDuration.toFloat()).coerceIn(0f, 1f) else 0f
-
-            Surface(
-                color = Color(0x99000000),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .clickable { showControls = true }
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    LinearProgressIndicator(
-                        progress = { progressFraction },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(5.dp)
-                            .clip(RoundedCornerShape(2.5.dp)),
-                        color = BrandRed,
-                        trackColor = Color.White.copy(alpha = 0.3f)
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "${formatTime(currentPosition)} / ${if (effectiveDuration > 1L) formatTime(effectiveDuration) else "--:--"}",
-                            color = Color.White,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            text = "ভিডিও টানতে ট্যাপ করুন (Tap to seek)",
-                            color = CyanAccent,
-                            fontSize = 9.5.sp,
-                            fontWeight = FontWeight.Medium
-                        )
                     }
                 }
             }
@@ -885,9 +903,23 @@ fun VideoPlayerView(
     }
 }
 
+private fun Context.findActivity(): android.app.Activity? {
+    var ctx = this
+    while (ctx is android.content.ContextWrapper) {
+        if (ctx is android.app.Activity) return ctx
+        ctx = ctx.baseContext
+    }
+    return null
+}
+
 private fun formatTime(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val minutes = totalSeconds / 60
+    val totalSeconds = (ms / 1000).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
-    return String.format("%02d:%02d", minutes, seconds)
+    return if (hours > 0) {
+        String.format("%02d:%02d:%02d", hours, minutes, seconds)
+    } else {
+        String.format("%02d:%02d", minutes, seconds)
+    }
 }

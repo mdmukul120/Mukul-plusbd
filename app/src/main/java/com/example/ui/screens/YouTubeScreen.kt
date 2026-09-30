@@ -38,6 +38,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import android.content.res.Configuration
+import android.content.pm.ActivityInfo
+import com.example.data.util.findActivity
+import com.example.data.util.VideoPlayerState
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.api.YouTubeApiService
@@ -157,9 +164,34 @@ fun YouTubeScreen(
         }
     }
 
+    var isYouTubeFullScreen by remember { mutableStateOf(false) }
+
+    // Immersive mode for YouTube Fullscreen
+    val activity = context.findActivity()
+    DisposableEffect(isYouTubeFullScreen) {
+        VideoPlayerState.isFullScreen = isYouTubeFullScreen
+        if (isYouTubeFullScreen && activity != null) {
+            val window = activity.window
+            val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+            insetsController.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            insetsController.hide(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            VideoPlayerState.isFullScreen = false
+            if (activity != null) {
+                val window = activity.window
+                val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+                insetsController.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
+
     // Back button handling
     BackHandler(enabled = true) {
         when {
+            isYouTubeFullScreen -> {
+                isYouTubeFullScreen = false
+            }
             showResolutionDialog -> {
                 if (!isExtracting) showResolutionDialog = false
             }
@@ -192,66 +224,112 @@ fun YouTubeScreen(
                     .fillMaxSize()
                     .background(CinemaBackground)
             ) {
-                // Top Custom Player Bar
-                Surface(
-                    color = CinemaSurface,
-                    modifier = Modifier.fillMaxWidth().statusBarsPadding()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(46.dp)
-                            .padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                // Top Custom Player Bar (Hidden in Fullscreen)
+                if (!isYouTubeFullScreen) {
+                    Surface(
+                        color = CinemaSurface,
+                        modifier = Modifier.fillMaxWidth().statusBarsPadding()
                     ) {
-                        IconButton(
-                            onClick = { activeVideo = null },
-                            modifier = Modifier.size(36.dp)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                                .padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back",
-                                tint = TextPrimary
+                            IconButton(
+                                onClick = { activeVideo = null },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = TextPrimary
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = currentVideo.title,
+                                color = TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
                             )
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = currentVideo.title,
-                            color = TextPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
-                        )
-                        IconButton(
-                            onClick = {
-                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "text/plain"
-                                    putExtra(Intent.EXTRA_SUBJECT, currentVideo.title)
-                                    putExtra(Intent.EXTRA_TEXT, "Watch on Mukul Plus: ${currentVideo.watchUrl}")
-                                }
-                                context.startActivity(Intent.createChooser(shareIntent, "শেয়ার করুন"))
-                            },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Share",
-                                tint = TextMuted,
-                                modifier = Modifier.size(20.dp)
-                            )
+
+                            // Screen Rotate button
+                            IconButton(
+                                onClick = {
+                                    val act = context.findActivity()
+                                    if (act != null) {
+                                        val orient = act.resources.configuration.orientation
+                                        if (orient == Configuration.ORIENTATION_LANDSCAPE) {
+                                            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                        } else {
+                                            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.ScreenRotation,
+                                    contentDescription = "Rotate",
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            // Fullscreen toggle button
+                            IconButton(
+                                onClick = { isYouTubeFullScreen = true },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Fullscreen,
+                                    contentDescription = "Fullscreen",
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, currentVideo.title)
+                                        putExtra(Intent.EXTRA_TEXT, "Watch on Mukul Plus: ${currentVideo.watchUrl}")
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "শেয়ার করুন"))
+                                },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Share,
+                                    contentDescription = "Share",
+                                    tint = TextMuted,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
 
-                // Dedicated Compact Hardware-Accelerated Video Player
-                Box(
-                    modifier = Modifier
+                // Dedicated Hardware-Accelerated Video Player
+                val playerBoxModifier = if (isYouTubeFullScreen) {
+                    Modifier.fillMaxSize()
+                } else {
+                    Modifier
                         .fillMaxWidth()
-                        .height(200.dp)
-                        .background(Color.Black)
+                        .height(210.dp)
+                }
+
+                Box(
+                    modifier = playerBoxModifier.background(Color.Black)
                 ) {
+                    var playerReloadKey by remember(currentVideo.id) { mutableIntStateOf(0) }
+
                     AndroidView(
                         modifier = Modifier.fillMaxSize(),
                         factory = { ctx ->
@@ -275,10 +353,14 @@ fun YouTubeScreen(
                                     allowFileAccess = true
                                     cacheMode = WebSettings.LOAD_DEFAULT
                                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                                    userAgentString = "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+                                    userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
                                 }
 
-                                webChromeClient = WebChromeClient()
+                                webChromeClient = object : WebChromeClient() {
+                                    override fun getDefaultVideoPoster(): android.graphics.Bitmap? {
+                                        return android.graphics.Bitmap.createBitmap(10, 10, android.graphics.Bitmap.Config.ARGB_8888)
+                                    }
+                                }
                                 webViewClient = object : WebViewClient() {
                                     override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean = false
                                 }
@@ -298,7 +380,7 @@ fun YouTubeScreen(
                                     <body>
                                         <div class="player-container">
                                             <iframe 
-                                                src="https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&enablejsapi=1&rel=0&modestbranding=1&controls=1&fs=1&origin=https://www.youtube.com" 
+                                                src="https://www.youtube-nocookie.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&controls=1&enablejsapi=1&rel=0&modestbranding=1" 
                                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
                                                 allowfullscreen>
                                             </iframe>
@@ -307,7 +389,7 @@ fun YouTubeScreen(
                                     </html>
                                 """.trimIndent()
 
-                                loadDataWithBaseURL("https://www.youtube.com", htmlData, "text/html", "UTF-8", null)
+                                loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
                             }
                         },
                         update = { webView ->
@@ -329,7 +411,7 @@ fun YouTubeScreen(
                                     <body>
                                         <div class="player-container">
                                             <iframe 
-                                                src="https://www.youtube.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&enablejsapi=1&rel=0&modestbranding=1&controls=1&fs=1&origin=https://www.youtube.com" 
+                                                src="https://www.youtube-nocookie.com/embed/${currentVideo.id}?autoplay=1&playsinline=1&controls=1&enablejsapi=1&rel=0&modestbranding=1" 
                                                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
                                                 allowfullscreen>
                                             </iframe>
@@ -337,12 +419,55 @@ fun YouTubeScreen(
                                     </body>
                                     </html>
                                 """.trimIndent()
-                                webView.loadDataWithBaseURL("https://www.youtube.com", htmlData, "text/html", "UTF-8", null)
+                                webView.loadDataWithBaseURL("https://www.youtube-nocookie.com", htmlData, "text/html", "UTF-8", null)
                             }
                         }
                     )
+
+                    // Floating controls for Fullscreen mode
+                    if (isYouTubeFullScreen) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.End,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            IconButton(
+                                onClick = {
+                                    val act = context.findActivity()
+                                    if (act != null) {
+                                        val orient = act.resources.configuration.orientation
+                                        if (orient == Configuration.ORIENTATION_LANDSCAPE) {
+                                            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                                        } else {
+                                            act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                                        }
+                                    }
+                                },
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .background(Color(0x88000000), CircleShape)
+                            ) {
+                                Icon(Icons.Default.ScreenRotation, contentDescription = "Rotate Screen", tint = Color.White, modifier = Modifier.size(20.dp))
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            IconButton(
+                                onClick = { isYouTubeFullScreen = false },
+                                modifier = Modifier
+                                    .size(38.dp)
+                                    .background(Color(0x88000000), CircleShape)
+                            ) {
+                                Icon(Icons.Default.FullscreenExit, contentDescription = "Exit Fullscreen", tint = Color.White, modifier = Modifier.size(24.dp))
+                            }
+                        }
+                    }
                 }
 
+                if (!isYouTubeFullScreen) {
                 // Quick Player Action Strip
                 Surface(
                     color = CinemaSurfaceVariant,
@@ -351,37 +476,58 @@ fun YouTubeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "🎬 ফুল এইচডি ভিডিও প্লেয়ার",
+                            text = "🎬 ফুল এইচডি প্লেয়ার",
                             color = CyanAccent,
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Bold
                         )
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            // YouTube App direct launch
                             TextButton(
                                 onClick = {
-                                    val ytIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(currentVideo.watchUrl))
+                                    val ytIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(currentVideo.watchUrl)).apply {
+                                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    }
                                     try {
                                         context.startActivity(ytIntent)
                                     } catch (_: Exception) {
                                         Toast.makeText(context, "ইউটিউব অ্যাপ নেই", Toast.LENGTH_SHORT).show()
                                     }
                                 },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
                                 modifier = Modifier.height(28.dp)
                             ) {
-                                Icon(Icons.Default.OpenInNew, contentDescription = null, tint = BrandRedLight, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("অ্যাপে দেখুন", color = BrandRedLight, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                Icon(Icons.Default.OpenInNew, contentDescription = null, tint = BrandRedLight, modifier = Modifier.size(13.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("অ্যাপে দেখুন", color = BrandRedLight, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
                             }
 
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
 
+                            // Browser launch fallback
+                            IconButton(
+                                onClick = {
+                                    try {
+                                        val browserIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(currentVideo.watchUrl)).apply {
+                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        context.startActivity(browserIntent)
+                                    } catch (_: Exception) {}
+                                },
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Icon(Icons.Default.Language, contentDescription = "Browser", tint = TextSecondary, modifier = Modifier.size(15.dp))
+                            }
+
+                            Spacer(modifier = Modifier.width(2.dp))
+
+                            // Download Button
                             IconButton(
                                 onClick = {
                                     targetDownloadVideo = currentVideo
@@ -390,7 +536,7 @@ fun YouTubeScreen(
                                 },
                                 modifier = Modifier.size(28.dp)
                             ) {
-                                Icon(Icons.Default.CloudDownload, contentDescription = "Download", tint = TextPrimary, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.CloudDownload, contentDescription = "Download", tint = CyanAccent, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -598,6 +744,7 @@ fun YouTubeScreen(
                             )
                         }
                     }
+                }
                 }
             }
         } else {

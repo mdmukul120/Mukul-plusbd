@@ -3,12 +3,21 @@ package com.example
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import com.example.data.download.DownloadNotificationHelper
+import com.example.data.util.MovieUpdateNotificationManager
+import com.example.data.util.VideoPlayerState
+import com.example.data.util.MukulOttNavState
+import com.example.data.util.findActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -55,7 +64,6 @@ enum class ScreenTab(val title: String, val icon: ImageVector) {
     MUSIC("মিউজিক", Icons.Default.MusicNote),
     YOUTUBE("ইউটিউব", Icons.Default.PlayCircle),
     MUKUL_OTT("ওটিটি", Icons.Default.VideoLibrary),
-    REELS("রিলস", Icons.Default.SlowMotionVideo),
     EXTRACTOR("ডাউনলোড", Icons.Default.CloudDownload),
     PROFILE("প্রোফাইল", Icons.Default.Person)
 }
@@ -95,6 +103,38 @@ fun MukulPlusApp() {
     var selectedTvChannel by remember { mutableStateOf<TvChannel?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+
+    val isPlayerFullScreen = VideoPlayerState.isFullScreen
+
+    // Notification Permission Request (Android 13+)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val permissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { _ -> }
+        LaunchedEffect(Unit) {
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                permissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
+
+    // App Initialization: Notifications & Movie APIs Check & Play Movie intent handling
+    val activity = context.findActivity()
+    LaunchedEffect(Unit) {
+        DownloadNotificationHelper.initChannels(context)
+        MovieUpdateNotificationManager.checkForNewMovies(context)
+
+        val intent = activity?.intent
+        if (intent?.action == DownloadNotificationHelper.ACTION_PLAY_MOVIE || intent?.hasExtra(DownloadNotificationHelper.EXTRA_MOVIE_SLUG) == true) {
+            val slug = intent.getStringExtra(DownloadNotificationHelper.EXTRA_MOVIE_SLUG)
+            val title = intent.getStringExtra(DownloadNotificationHelper.EXTRA_MOVIE_TITLE)
+            if (!slug.isNullOrEmpty()) {
+                currentTab = ScreenTab.MUKUL_OTT
+                MukulOttNavState.pendingMovieSlug = slug
+                MukulOttNavState.pendingMovieTitle = title
+            }
+        }
+    }
 
     var isAppStarting by remember { mutableStateOf(true) }
 
@@ -155,10 +195,10 @@ fun MukulPlusApp() {
         return
     }
 
-    // Modal Drawer for Sidebar (Disable gestures on Extractor tab to prevent scroll conflict)
+    // Modal Drawer for Sidebar (Disable gestures on Sports/Extractor/YouTube to prevent scroll conflict)
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = currentTab != ScreenTab.EXTRACTOR,
+        gesturesEnabled = drawerState.isOpen || (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.SPORTS && currentTab != ScreenTab.YOUTUBE),
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = CinemaSurface,
@@ -299,17 +339,6 @@ fun MukulPlusApp() {
                     )
 
                     NavigationDrawerItem(
-                        icon = { Icon(Icons.Default.SlowMotionVideo, contentDescription = null, tint = if (currentTab == ScreenTab.REELS) BrandRed else TextSecondary) },
-                        label = { Text("রিলস ও শর্টস") },
-                        selected = currentTab == ScreenTab.REELS,
-                        onClick = {
-                            currentTab = ScreenTab.REELS
-                            coroutineScope.launch { drawerState.close() }
-                        },
-                        colors = drawerItemColors()
-                    )
-
-                    NavigationDrawerItem(
                         icon = { Icon(Icons.Default.CloudDownload, contentDescription = null, tint = if (currentTab == ScreenTab.EXTRACTOR) BrandRed else TextSecondary) },
                         label = { Text("ডাউনলোড") },
                         selected = currentTab == ScreenTab.EXTRACTOR,
@@ -401,7 +430,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.REELS && currentTab != ScreenTab.SPORTS) {
+                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.SPORTS) {
                     Surface(
                         color = CinemaSurface,
                         tonalElevation = 3.dp,
@@ -465,69 +494,70 @@ fun MukulPlusApp() {
                 }
             },
             bottomBar = {
-                Column {
-                    MiniMusicPlayer()
-                    Surface(
-                        color = CinemaSurface,
-                        tonalElevation = 6.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        val bottomBarTabs = listOf(
-                            ScreenTab.HOME,
-                            ScreenTab.SPORTS,
-                            ScreenTab.MOVIES,
-                            ScreenTab.LIVE_TV,
-                            ScreenTab.MUSIC,
-                            ScreenTab.YOUTUBE,
-                            ScreenTab.MUKUL_OTT,
-                            ScreenTab.REELS,
-                            ScreenTab.EXTRACTOR
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .navigationBarsPadding()
-                                .height(52.dp)
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                if (!isPlayerFullScreen) {
+                    Column {
+                        MiniMusicPlayer()
+                        Surface(
+                            color = CinemaSurface,
+                            tonalElevation = 6.dp,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            bottomBarTabs.forEach { tab ->
-                                val isSelected = currentTab == tab
-                                Column(
-                                    modifier = Modifier
-                                        .widthIn(min = 52.dp)
-                                        .clickable { currentTab = tab }
-                                        .padding(horizontal = 4.dp, vertical = 3.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Center
-                                ) {
-                                    Surface(
-                                        color = if (isSelected) BrandRed.copy(alpha = 0.18f) else Color.Transparent,
-                                        shape = RoundedCornerShape(10.dp)
+                            val bottomBarTabs = listOf(
+                                ScreenTab.HOME,
+                                ScreenTab.SPORTS,
+                                ScreenTab.MOVIES,
+                                ScreenTab.LIVE_TV,
+                                ScreenTab.MUSIC,
+                                ScreenTab.YOUTUBE,
+                                ScreenTab.MUKUL_OTT,
+                                ScreenTab.EXTRACTOR
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .navigationBarsPadding()
+                                    .height(52.dp)
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                bottomBarTabs.forEach { tab ->
+                                    val isSelected = currentTab == tab
+                                    Column(
+                                        modifier = Modifier
+                                            .widthIn(min = 52.dp)
+                                            .clickable { currentTab = tab }
+                                            .padding(horizontal = 4.dp, vertical = 3.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
                                     ) {
-                                        Box(
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
-                                            contentAlignment = Alignment.Center
+                                        Surface(
+                                            color = if (isSelected) BrandRed.copy(alpha = 0.18f) else Color.Transparent,
+                                            shape = RoundedCornerShape(10.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = tab.icon,
-                                                contentDescription = tab.title,
-                                                tint = if (isSelected) BrandRed else TextMuted,
-                                                modifier = Modifier.size(18.dp)
-                                            )
+                                            Box(
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = tab.icon,
+                                                    contentDescription = tab.title,
+                                                    tint = if (isSelected) BrandRed else TextMuted,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
                                         }
+                                        Spacer(modifier = Modifier.height(1.dp))
+                                        Text(
+                                            text = tab.title,
+                                            color = if (isSelected) BrandRed else TextMuted,
+                                            fontSize = 8.5.sp,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                        )
                                     }
-                                    Spacer(modifier = Modifier.height(1.dp))
-                                    Text(
-                                        text = tab.title,
-                                        color = if (isSelected) BrandRed else TextMuted,
-                                        fontSize = 8.5.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                    )
                                 }
                             }
                         }
@@ -535,10 +565,15 @@ fun MukulPlusApp() {
                 }
             }
         ) { innerPadding ->
-            Box(
-                modifier = Modifier
+            val contentModifier = if (isPlayerFullScreen) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+            }
+            Box(
+                modifier = contentModifier
             ) {
                 when (currentTab) {
                     ScreenTab.HOME -> {
@@ -583,12 +618,6 @@ fun MukulPlusApp() {
                     }
                     ScreenTab.MUKUL_OTT -> {
                         MukulOttScreen()
-                    }
-                    ScreenTab.REELS -> {
-                        ReelsScreen(
-                            onNavigateBack = { currentTab = ScreenTab.HOME },
-                            onNavigateToProfile = { currentTab = ScreenTab.PROFILE }
-                        )
                     }
                     ScreenTab.EXTRACTOR -> {
                         ExtractorScreen()

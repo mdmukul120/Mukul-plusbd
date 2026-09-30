@@ -123,6 +123,15 @@ fun MukulOttScreen(
 
     val gridState = rememberLazyGridState()
 
+    // Listen for pending movie slug from notifications
+    LaunchedEffect(com.example.data.util.MukulOttNavState.pendingMovieSlug) {
+        val pending = com.example.data.util.MukulOttNavState.pendingMovieSlug
+        if (!pending.isNullOrBlank()) {
+            selectedMovieSlug = pending
+            com.example.data.util.MukulOttNavState.pendingMovieSlug = null
+        }
+    }
+
     // Helper: Load a specific page
     fun loadPage(page: Int) {
         val target = page.coerceIn(1, totalPages)
@@ -709,7 +718,6 @@ fun MukulOttScreen(
                             }
                         }
                     }
-                }
 
                 // 3. IN-APP DOWNLOAD PROGRESS BAR (যদি ডাউনলোড চলমান থাকে)
                 val activeDownloadTask = allTasks.values.firstOrNull {
@@ -842,12 +850,13 @@ fun MukulOttScreen(
                     }
                 }
 
-                // Scrollable container for Info & Lottery Recommendations
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                ) {
+                // Scrollable container for Info & Lottery Recommendations (hidden completely in fullscreen)
+                if (!isPlayerFullScreen) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    ) {
                     // ------------------------------------------------------------
                     // 4. এক লাইনে মুভির তথ্য ও স্ক্রিনশট (যা হিডেন আইকনে লুকানো থাকবে)
                     // ------------------------------------------------------------
@@ -1082,6 +1091,8 @@ fun MukulOttScreen(
                     }
                 }
             }
+        }
+        }
         }
     } else {
             // ================================================================
@@ -1786,14 +1797,16 @@ fun LotteryMovieCard(
 
     Card(
         modifier = modifier
-            .width(105.dp)
+            .width(112.dp)
+            .height(186.dp)
             .clickable { onClick() },
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
     ) {
-        Column {
-            // Clean Image Container without ANY text on top of it
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Clean Image Container with fixed height
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1810,14 +1823,14 @@ fun LotteryMovieCard(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Play icon overlay at bottom corner (no text)
+                // Play icon overlay at bottom corner
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .background(
                             Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
-                                startY = 80f
+                                colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f)),
+                                startY = 75f
                             )
                         ),
                     contentAlignment = Alignment.BottomEnd
@@ -1827,48 +1840,66 @@ fun LotteryMovieCard(
                         color = BrandRed,
                         modifier = Modifier
                             .padding(4.dp)
-                            .size(20.dp)
+                            .size(22.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
                                 contentDescription = "Play",
                                 tint = Color.White,
-                                modifier = Modifier.size(13.dp)
+                                modifier = Modifier.size(14.dp)
                             )
                         }
                     }
                 }
             }
 
-            // Info Below Image (লটারি ট্যাগ এবং টাইটেল নিচে)
-            Column(modifier = Modifier.padding(5.dp)) {
+            // Info Below Image: Fixed height text area (56.dp) ensuring every card is identical
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
                 Text(
                     text = item.title,
                     color = TextPrimary,
-                    fontSize = 10.sp,
+                    fontSize = 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(2.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(
-                        text = "লটারি",
-                        color = Color(0xFFFFB020),
-                        fontSize = 8.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    if (item.qualityTag.isNotEmpty()) {
+                    Surface(
+                        color = Color(0xFFFFB020).copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(3.dp)
+                    ) {
                         Text(
-                            text = item.qualityTag,
-                            color = TextMuted,
-                            fontSize = 7.5.sp
+                            text = "লটারি",
+                            color = Color(0xFFFFB020),
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                         )
+                    }
+                    if (item.qualityTag.isNotEmpty()) {
+                        Surface(
+                            color = CyanAccent.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(3.dp)
+                        ) {
+                            Text(
+                                text = item.qualityTag,
+                                color = CyanAccent,
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 3.dp, vertical = 1.dp)
+                            )
+                        }
                     }
                 }
             }

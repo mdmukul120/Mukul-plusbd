@@ -122,6 +122,11 @@ fun SportsScreen(
 
                         setLayerType(View.LAYER_TYPE_HARDWARE, null)
                         setBackgroundColor(android.graphics.Color.BLACK)
+                        isVerticalScrollBarEnabled = true
+                        isHorizontalScrollBarEnabled = false
+                        overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+                        isNestedScrollingEnabled = false
+                        scrollBarStyle = View.SCROLLBARS_INSIDE_OVERLAY
 
                         settings.apply {
                             javaScriptEnabled = true
@@ -135,6 +140,7 @@ fun SportsScreen(
                             displayZoomControls = false
                             allowFileAccess = true
                             allowContentAccess = true
+                            javaScriptCanOpenWindowsAutomatically = true
                             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                             cacheMode = WebSettings.LOAD_DEFAULT
                             userAgentString = "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
