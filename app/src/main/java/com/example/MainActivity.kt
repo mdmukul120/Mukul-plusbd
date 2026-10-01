@@ -65,7 +65,9 @@ enum class ScreenTab(val title: String, val icon: ImageVector) {
     YOUTUBE("ইউটিউব", Icons.Default.PlayCircle),
     MUKUL_OTT("ওটিটি", Icons.Default.VideoLibrary),
     EXTRACTOR("ডাউনলোড", Icons.Default.CloudDownload),
-    PROFILE("প্রোফাইল", Icons.Default.Person)
+    APPS("অ্যাপস", Icons.Default.Apps),
+    PROFILE("প্রোফাইল", Icons.Default.Person),
+    ADMIN("অ্যাডমিন", Icons.Default.AdminPanelSettings)
 }
 
 class MainActivity : ComponentActivity() {
@@ -133,6 +135,14 @@ fun MukulPlusApp() {
                 MukulOttNavState.pendingMovieSlug = slug
                 MukulOttNavState.pendingMovieTitle = title
             }
+        }
+    }
+
+    BackHandler(enabled = currentTab != ScreenTab.HOME) {
+        if (currentTab == ScreenTab.ADMIN) {
+            currentTab = ScreenTab.APPS
+        } else {
+            currentTab = ScreenTab.HOME
         }
     }
 
@@ -349,6 +359,28 @@ fun MukulPlusApp() {
                         colors = drawerItemColors()
                     )
 
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Apps, contentDescription = null, tint = if (currentTab == ScreenTab.APPS) BrandRed else TextSecondary) },
+                        label = { Text("আমাদের অ্যাপস") },
+                        selected = currentTab == ScreenTab.APPS,
+                        onClick = {
+                            currentTab = ScreenTab.APPS
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = if (currentTab == ScreenTab.ADMIN) BrandRed else TextSecondary) },
+                        label = { Text("অ্যাডমিন প্যানেল") },
+                        selected = currentTab == ScreenTab.ADMIN,
+                        onClick = {
+                            currentTab = ScreenTab.ADMIN
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
                     val currentThemeMode by ThemeManager.themeMode.collectAsState()
                     NavigationDrawerItem(
                         icon = {
@@ -510,7 +542,8 @@ fun MukulPlusApp() {
                                 ScreenTab.MUSIC,
                                 ScreenTab.YOUTUBE,
                                 ScreenTab.MUKUL_OTT,
-                                ScreenTab.EXTRACTOR
+                                ScreenTab.EXTRACTOR,
+                                ScreenTab.APPS
                             )
                             Row(
                                 modifier = Modifier
@@ -621,6 +654,16 @@ fun MukulPlusApp() {
                     }
                     ScreenTab.EXTRACTOR -> {
                         ExtractorScreen()
+                    }
+                    ScreenTab.APPS -> {
+                        AppsStoreScreen(
+                            onOpenAdminPanel = { currentTab = ScreenTab.ADMIN }
+                        )
+                    }
+                    ScreenTab.ADMIN -> {
+                        AdminPanelScreen(
+                            onBack = { currentTab = ScreenTab.APPS }
+                        )
                     }
                     ScreenTab.PROFILE -> {
                         ProfileScreen(

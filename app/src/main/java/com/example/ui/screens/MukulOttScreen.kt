@@ -139,7 +139,7 @@ fun MukulOttScreen(
         MukulOttRepository.cachedPage = target
         coroutineScope.launch {
             isLoadingPage = true
-            val loaded = MukulOttRepository.getMovies(target)
+            val loaded = MukulOttRepository.getPageOf50Movies(target)
             movies = loaded
             MukulOttRepository.cachedMovies = loaded
             MukulOttRepository.isLoaded = true
@@ -561,8 +561,6 @@ fun MukulOttScreen(
                                 }
                             }
                         }
-
-                        Spacer(modifier = Modifier.weight(1f))
 
                         // (৪) ডাউনলোড বাটন (Download Button with Direct Resolution Dropdown)
                         Box {

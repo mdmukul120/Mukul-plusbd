@@ -84,6 +84,23 @@ object MukulOttRepository {
     }
 
     /**
+     * Fetch exactly 50 movie cards per user page.
+     * Fetches 8 backend sub-pages in parallel to gather 50 unique video cards.
+     */
+    suspend fun getPageOf50Movies(userPage: Int): List<MukulOttMovieItem> = withContext(Dispatchers.IO) {
+        val startApiPage = (userPage.coerceAtLeast(1) - 1) * 7 + 1
+        val endApiPage = startApiPage + 7
+
+        val batch = coroutineScope {
+            (startApiPage..endApiPage).map { p ->
+                async(Dispatchers.IO) { getMovies(p) }
+            }.awaitAll()
+        }
+        val combined = batch.flatten().distinctBy { it.slug }
+        if (combined.size > 50) combined.take(50) else combined
+    }
+
+    /**
      * Search movies across 1 to 200 pages.
      * Uses server-side search API first (/api/search?q=...) for instant results,
      * then supplements by scanning paginated catalog up to maxPages.

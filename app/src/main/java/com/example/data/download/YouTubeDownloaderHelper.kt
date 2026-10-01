@@ -30,10 +30,10 @@ data class ExtractionResult(
 object YouTubeDownloaderHelper {
     private const val TAG = "YouTubeDownloader"
 
-    // Ultra-fast HTTP client with low timeout to prevent UI freezes
+    // Ultra-fast HTTP client with optimized timeout and connection pool
     private val client = OkHttpClient.Builder()
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(6, TimeUnit.SECONDS)
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .connectionPool(okhttp3.ConnectionPool(10, 3, TimeUnit.MINUTES))
         .retryOnConnectionFailure(true)
         .build()
@@ -43,7 +43,8 @@ object YouTubeDownloaderHelper {
         YouTubeResolution("360", "360p Medium", "দ্রুত ডাউনলোড (ডাটা সেভার)"),
         YouTubeResolution("1080", "1080p FHD", "ফুল এইচডি কোয়ালিটি"),
         YouTubeResolution("480", "480p SD", "স্ট্যান্ডার্ড কোয়ালিটি"),
-        YouTubeResolution("mp3", "MP3 অডিও", "শুধুমাত্র অডিও গান", isAudio = true)
+        YouTubeResolution("144", "144p Low", "লো কোয়ালিটি (দ্রুততম ডাউনলোড)"),
+        YouTubeResolution("mp3", "MP3 Audio", "শুধুমাত্র অডিও গান (MP3)", isAudio = true)
     )
 
     fun extractVideoId(url: String): String? {
@@ -109,7 +110,74 @@ object YouTubeDownloaderHelper {
 
         onProgressStatus("ডাউনলোড লিঙ্ক তৈরি হচ্ছে...")
 
-        // Method 1: Invidious API Streams (Extracts real direct MP4 streams)
+        // Method 1 (Primary): Downclip & SaveNow API (user specified)
+        try {
+            onProgressStatus("ডাউনলোড সার্ভার প্রস্তুত হচ্ছে...")
+            val requestedFormat = when {
+                format.equals("mp3", ignoreCase = true) || format == "140" -> "mp3"
+                format == "144" -> "144"
+                format == "240" -> "240"
+                format == "360" -> "360"
+                format == "480" -> "480"
+                format == "720" -> "720"
+                format == "1080" -> "1080"
+                else -> "360"
+            }
+            val startApiUrl = "https://downclip.vercel.app/api/download/start?url=${URLEncoder.encode(canonicalUrl, "UTF-8")}&format=$requestedFormat"
+            val startReq = Request.Builder()
+                .url(startApiUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .header("Accept", "application/json")
+                .build()
+
+            val startResponse = client.newCall(startReq).execute()
+            if (startResponse.isSuccessful) {
+                val startBody = startResponse.body?.string().orEmpty()
+                if (startBody.isNotEmpty()) {
+                    val startJson = JSONObject(startBody)
+                    val taskId = startJson.optString("id", "")
+                    val title = startJson.optString("title", defaultTitle)
+                    val thumbnail = startJson.optString("image", defaultThumb)
+
+                    if (taskId.isNotEmpty()) {
+                        val progressApiUrl = "https://p.savenow.to/api/progress?id=$taskId"
+                        for (attempt in 1..12) {
+                            delay(900)
+                            onProgressStatus("ডাউনলোড লিঙ্ক প্রস্তুত হচ্ছে ($attempt/12)...")
+                            try {
+                                val pollReq = Request.Builder()
+                                    .url(progressApiUrl)
+                                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                                    .header("Accept", "application/json")
+                                    .build()
+                                val pollRes = client.newCall(pollReq).execute()
+                                val pollBody = pollRes.body?.string().orEmpty()
+                                if (pollBody.isNotEmpty()) {
+                                    val pollJson = JSONObject(pollBody)
+                                    val dlUrl = pollJson.optString("download_url", "")
+                                    if (dlUrl.isNotEmpty() && dlUrl != "null") {
+                                        onProgressStatus("ডাউনলোড লিঙ্ক প্রস্তুত!")
+                                        return@withContext Result.success(
+                                            ExtractionResult(
+                                                downloadUrl = dlUrl,
+                                                title = title,
+                                                thumbnail = thumbnail,
+                                                format = format,
+                                                videoId = videoId
+                                            )
+                                        )
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Method 1 Downclip notice: ${e.message}")
+        }
+
+        // Method 2: Invidious API Streams (Extracts real direct MP4 streams)
         try {
             val invidiousHosts = listOf(
                 "https://inv.nadeko.net",
