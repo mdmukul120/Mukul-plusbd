@@ -715,7 +715,40 @@ fun MukulOttScreen(
                                 }
                             }
                         }
+
+                        // (৫) তথ্য বাটন (Information & Screenshots Toggle)
+                        FilledTonalButton(
+                            onClick = { isDetailsExpanded = !isDetailsExpanded },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = if (isDetailsExpanded) BrandRed.copy(alpha = 0.25f) else CinemaSurface,
+                                contentColor = if (isDetailsExpanded) BrandRedLight else TextPrimary
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "তথ্য",
+                                tint = if (isDetailsExpanded) BrandRedLight else CyanAccent,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (isDetailsExpanded) "তথ্য লুকান" else "তথ্য",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Icon(
+                                imageVector = if (isDetailsExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = if (isDetailsExpanded) BrandRedLight else TextMuted,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
                     }
+                }
+            }
 
                 // 3. IN-APP DOWNLOAD PROGRESS BAR (যদি ডাউনলোড চলমান থাকে)
                 val activeDownloadTask = allTasks.values.firstOrNull {
@@ -1089,8 +1122,6 @@ fun MukulOttScreen(
                     }
                 }
             }
-        }
-        }
         }
     } else {
             // ================================================================

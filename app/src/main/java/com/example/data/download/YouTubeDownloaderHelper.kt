@@ -136,14 +136,19 @@ object YouTubeDownloaderHelper {
                 if (startBody.isNotEmpty()) {
                     val startJson = JSONObject(startBody)
                     val taskId = startJson.optString("id", "")
+                    val progressUrlInJson = startJson.optString("progressUrl", "")
                     val title = startJson.optString("title", defaultTitle)
                     val thumbnail = startJson.optString("image", defaultThumb)
 
-                    if (taskId.isNotEmpty()) {
-                        val progressApiUrl = "https://p.savenow.to/api/progress?id=$taskId"
-                        for (attempt in 1..12) {
-                            delay(900)
-                            onProgressStatus("ডাউনলোড লিঙ্ক প্রস্তুত হচ্ছে ($attempt/12)...")
+                    val progressApiUrl = progressUrlInJson.ifEmpty {
+                        if (taskId.isNotEmpty()) "https://p.savenow.to/api/progress?id=$taskId" else ""
+                    }
+
+                    if (progressApiUrl.isNotEmpty()) {
+                        for (attempt in 1..25) {
+                            delay(1200)
+                            val pct = (attempt * 4).coerceAtMost(98)
+                            onProgressStatus("ডাউনলোড লিঙ্ক প্রস্তুত হচ্ছে ($pct%)...")
                             try {
                                 val pollReq = Request.Builder()
                                     .url(progressApiUrl)

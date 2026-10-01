@@ -85,11 +85,12 @@ object MukulOttRepository {
 
     /**
      * Fetch exactly 50 movie cards per user page.
-     * Fetches 8 backend sub-pages in parallel to gather 50 unique video cards.
+     * Fetches backend sub-pages in parallel to guarantee 50 unique video cards.
      */
     suspend fun getPageOf50Movies(userPage: Int): List<MukulOttMovieItem> = withContext(Dispatchers.IO) {
-        val startApiPage = (userPage.coerceAtLeast(1) - 1) * 7 + 1
-        val endApiPage = startApiPage + 7
+        val pageIdx = userPage.coerceAtLeast(1)
+        val startApiPage = (pageIdx - 1) * 6 + 1
+        val endApiPage = startApiPage + 7 // Fetch 8 sub-pages in parallel (around 64-72 items)
 
         val batch = coroutineScope {
             (startApiPage..endApiPage).map { p ->
@@ -97,7 +98,20 @@ object MukulOttRepository {
             }.awaitAll()
         }
         val combined = batch.flatten().distinctBy { it.slug }
-        if (combined.size > 50) combined.take(50) else combined
+        if (combined.size >= 50) {
+            combined.take(50)
+        } else {
+            val extraList = mutableListOf<MukulOttMovieItem>()
+            extraList.addAll(combined)
+            var nextP = endApiPage + 1
+            while (extraList.size < 50 && nextP <= startApiPage + 14) {
+                val more = getMovies(nextP)
+                if (more.isEmpty()) break
+                extraList.addAll(more.filter { m -> extraList.none { it.slug == m.slug } })
+                nextP++
+            }
+            if (extraList.size > 50) extraList.take(50) else extraList
+        }
     }
 
     /**

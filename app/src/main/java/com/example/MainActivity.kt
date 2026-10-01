@@ -283,17 +283,6 @@ fun MukulPlusApp() {
                     )
 
                     NavigationDrawerItem(
-                        icon = { Icon(Icons.Default.SportsCricket, contentDescription = null, tint = if (currentTab == ScreenTab.SPORTS) BrandRed else TextSecondary) },
-                        label = { Text("স্পোর্টস লাইভ") },
-                        selected = currentTab == ScreenTab.SPORTS,
-                        onClick = {
-                            currentTab = ScreenTab.SPORTS
-                            coroutineScope.launch { drawerState.close() }
-                        },
-                        colors = drawerItemColors()
-                    )
-
-                    NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Movie, contentDescription = null, tint = if (currentTab == ScreenTab.MOVIES) BrandRed else TextSecondary) },
                         label = { Text("মুভি ও সিরিজ") },
                         selected = currentTab == ScreenTab.MOVIES,
@@ -354,28 +343,6 @@ fun MukulPlusApp() {
                         selected = currentTab == ScreenTab.EXTRACTOR,
                         onClick = {
                             currentTab = ScreenTab.EXTRACTOR
-                            coroutineScope.launch { drawerState.close() }
-                        },
-                        colors = drawerItemColors()
-                    )
-
-                    NavigationDrawerItem(
-                        icon = { Icon(Icons.Default.Apps, contentDescription = null, tint = if (currentTab == ScreenTab.APPS) BrandRed else TextSecondary) },
-                        label = { Text("আমাদের অ্যাপস") },
-                        selected = currentTab == ScreenTab.APPS,
-                        onClick = {
-                            currentTab = ScreenTab.APPS
-                            coroutineScope.launch { drawerState.close() }
-                        },
-                        colors = drawerItemColors()
-                    )
-
-                    NavigationDrawerItem(
-                        icon = { Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = if (currentTab == ScreenTab.ADMIN) BrandRed else TextSecondary) },
-                        label = { Text("অ্যাডমিন প্যানেল") },
-                        selected = currentTab == ScreenTab.ADMIN,
-                        onClick = {
-                            currentTab = ScreenTab.ADMIN
                             coroutineScope.launch { drawerState.close() }
                         },
                         colors = drawerItemColors()
@@ -536,14 +503,12 @@ fun MukulPlusApp() {
                         ) {
                             val bottomBarTabs = listOf(
                                 ScreenTab.HOME,
-                                ScreenTab.SPORTS,
                                 ScreenTab.MOVIES,
                                 ScreenTab.LIVE_TV,
                                 ScreenTab.MUSIC,
                                 ScreenTab.YOUTUBE,
                                 ScreenTab.MUKUL_OTT,
-                                ScreenTab.EXTRACTOR,
-                                ScreenTab.APPS
+                                ScreenTab.EXTRACTOR
                             )
                             Row(
                                 modifier = Modifier
