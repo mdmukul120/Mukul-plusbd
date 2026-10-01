@@ -19,8 +19,10 @@ object MukulOttRepository {
     const val BASE_URL = "https://mukul-ott.ai.studio"
 
     private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectionPool(okhttp3.ConnectionPool(15, 5, TimeUnit.MINUTES))
+        .retryOnConnectionFailure(true)
+        .connectTimeout(12, TimeUnit.SECONDS)
+        .readTimeout(18, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 

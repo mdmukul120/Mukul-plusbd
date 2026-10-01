@@ -79,6 +79,8 @@ object YouTubeApiService {
     }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectionPool(okhttp3.ConnectionPool(15, 5, TimeUnit.MINUTES))
+        .retryOnConnectionFailure(true)
         .connectTimeout(12, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .followRedirects(true)

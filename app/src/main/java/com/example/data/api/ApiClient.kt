@@ -58,8 +58,11 @@ object ApiClient {
     }
 
     private val client: OkHttpClient = OkHttpClient.Builder()
+        .connectionPool(okhttp3.ConnectionPool(15, 5, TimeUnit.MINUTES))
+        .retryOnConnectionFailure(true)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        .writeTimeout(15, TimeUnit.SECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.view.LayoutInflater
@@ -28,6 +29,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import com.example.data.util.findActivity
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -136,26 +138,45 @@ fun VideoPlayerView(
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
 
+        val uri = try { Uri.parse(playableUrl) } catch (_: Exception) { null }
+        val host = uri?.host?.lowercase() ?: ""
+        val dynamicHeaders = mutableMapOf<String, String>(
+            "Accept" to "*/*",
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+        )
+        if (host.contains("hamyra")) {
+            dynamicHeaders["Origin"] = "https://www.hamyra.xyz"
+            dynamicHeaders["Referer"] = "https://www.hamyra.xyz/"
+        } else if (host.contains("ctghall")) {
+            dynamicHeaders["Referer"] = "https://www.ctghall.com/"
+        }
+
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
-            .setDefaultRequestProperties(
-                mapOf(
-                    "Origin" to "https://www.hamyra.xyz",
-                    "Referer" to "https://www.hamyra.xyz/",
-                    "Accept" to "*/*"
-                )
-            )
+            .setDefaultRequestProperties(dynamicHeaders)
             .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(15000)
-            .setReadTimeoutMs(25000)
+            .setConnectTimeoutMs(12000)
+            .setReadTimeoutMs(20000)
 
         val dataSourceFactory = DefaultDataSource.Factory(context, httpDataSourceFactory)
         val extractorsFactory = androidx.media3.extractor.DefaultExtractorsFactory()
             .setConstantBitrateSeekingEnabled(true)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
 
+        // Fast Load Control: Quick video start (1s buffer) and smooth streaming
+        val loadControl = androidx.media3.exoplayer.DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+            )
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
+
         ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(loadControl)
             .setSeekParameters(androidx.media3.exoplayer.SeekParameters.CLOSEST_SYNC)
             .build().apply {
                 playWhenReady = true
@@ -901,15 +922,6 @@ fun VideoPlayerView(
             }
         )
     }
-}
-
-private fun Context.findActivity(): android.app.Activity? {
-    var ctx = this
-    while (ctx is android.content.ContextWrapper) {
-        if (ctx is android.app.Activity) return ctx
-        ctx = ctx.baseContext
-    }
-    return null
 }
 
 private fun formatTime(ms: Long): String {
