@@ -192,6 +192,22 @@ fun MusicScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+
+                Button(
+                    onClick = {
+                        if (searchQuery.isNotBlank()) {
+                            performSearch(searchQuery)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                    shape = RoundedCornerShape(16.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    modifier = Modifier.height(48.dp)
+                ) {
+                    Icon(Icons.Default.Search, contentDescription = "সার্চ", modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("সার্চ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
             }
         }
 

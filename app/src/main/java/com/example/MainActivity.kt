@@ -54,20 +54,18 @@ import com.example.ui.components.MukulPlusLogo
 import com.example.ui.screens.*
 import com.example.ui.theme.*
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.launch
 
 enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
-    SPORTS("স্পোর্টস", Icons.Default.SportsCricket),
     MOVIES("মুভি", Icons.Default.Movie),
     LIVE_TV("টিভি", Icons.Default.Tv),
     MUSIC("মিউজিক", Icons.Default.MusicNote),
     YOUTUBE("ইউটিউব", Icons.Default.PlayCircle),
     MUKUL_OTT("ওটিটি", Icons.Default.VideoLibrary),
     EXTRACTOR("ডাউনলোড", Icons.Default.CloudDownload),
-    APPS("অ্যাপস", Icons.Default.Apps),
-    PROFILE("প্রোফাইল", Icons.Default.Person),
-    ADMIN("অ্যাডমিন", Icons.Default.AdminPanelSettings)
+    PROFILE("প্রোফাইল", Icons.Default.Person)
 }
 
 class MainActivity : ComponentActivity() {
@@ -139,11 +137,7 @@ fun MukulPlusApp() {
     }
 
     BackHandler(enabled = currentTab != ScreenTab.HOME) {
-        if (currentTab == ScreenTab.ADMIN) {
-            currentTab = ScreenTab.APPS
-        } else {
-            currentTab = ScreenTab.HOME
-        }
+        currentTab = ScreenTab.HOME
     }
 
     var isAppStarting by remember { mutableStateOf(true) }
@@ -205,10 +199,10 @@ fun MukulPlusApp() {
         return
     }
 
-    // Modal Drawer for Sidebar (Disable gestures on Sports/Extractor/YouTube to prevent scroll conflict)
+    // Modal Drawer for Sidebar (Disable gestures on Extractor/YouTube to prevent scroll conflict)
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = drawerState.isOpen || (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.SPORTS && currentTab != ScreenTab.YOUTUBE),
+        gesturesEnabled = drawerState.isOpen || (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE),
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = CinemaSurface,
@@ -429,7 +423,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.SPORTS) {
+                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE) {
                     Surface(
                         color = CinemaSurface,
                         tonalElevation = 3.dp,
@@ -514,43 +508,43 @@ fun MukulPlusApp() {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .navigationBarsPadding()
-                                    .height(52.dp)
-                                    .horizontalScroll(rememberScrollState())
-                                    .padding(horizontal = 4.dp),
+                                    .height(54.dp)
+                                    .padding(horizontal = 2.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                horizontalArrangement = Arrangement.SpaceEvenly
                             ) {
                                 bottomBarTabs.forEach { tab ->
                                     val isSelected = currentTab == tab
                                     Column(
                                         modifier = Modifier
-                                            .widthIn(min = 52.dp)
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
                                             .clickable { currentTab = tab }
-                                            .padding(horizontal = 4.dp, vertical = 3.dp),
+                                            .padding(vertical = 4.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
                                         Surface(
-                                            color = if (isSelected) BrandRed.copy(alpha = 0.18f) else Color.Transparent,
+                                            color = if (isSelected) BrandRed.copy(alpha = 0.20f) else Color.Transparent,
                                             shape = RoundedCornerShape(10.dp)
                                         ) {
                                             Box(
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
                                                     imageVector = tab.icon,
                                                     contentDescription = tab.title,
-                                                    tint = if (isSelected) BrandRed else TextMuted,
-                                                    modifier = Modifier.size(18.dp)
+                                                    tint = if (isSelected) BrandRedLight else TextMuted,
+                                                    modifier = Modifier.size(19.dp)
                                                 )
                                             }
                                         }
-                                        Spacer(modifier = Modifier.height(1.dp))
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = tab.title,
-                                            color = if (isSelected) BrandRed else TextMuted,
-                                            fontSize = 8.5.sp,
+                                            color = if (isSelected) BrandRedLight else TextMuted,
+                                            fontSize = 9.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
@@ -589,11 +583,6 @@ fun MukulPlusApp() {
                             onNavigateToMusic = { currentTab = ScreenTab.MUSIC }
                         )
                     }
-                    ScreenTab.SPORTS -> {
-                        SportsScreen(
-                            onNavigateBack = { currentTab = ScreenTab.HOME }
-                        )
-                    }
                     ScreenTab.MOVIES -> {
                         MoviesScreen(
                             mediaRepository = mediaRepository,
@@ -619,16 +608,6 @@ fun MukulPlusApp() {
                     }
                     ScreenTab.EXTRACTOR -> {
                         ExtractorScreen()
-                    }
-                    ScreenTab.APPS -> {
-                        AppsStoreScreen(
-                            onOpenAdminPanel = { currentTab = ScreenTab.ADMIN }
-                        )
-                    }
-                    ScreenTab.ADMIN -> {
-                        AdminPanelScreen(
-                            onBack = { currentTab = ScreenTab.APPS }
-                        )
                     }
                     ScreenTab.PROFILE -> {
                         ProfileScreen(

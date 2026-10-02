@@ -63,31 +63,39 @@ class MusicRepository(private val context: Context) {
         scope.launch {
             _isLoading.value = true
             try {
-                // 1. Load User's Hindi 1990s Playlist (id: 1167751266)
-                val (pl, songs) = MusicApiClient.getPlaylistDetails("1167751266", limit = 30)
-                if (pl != null) {
-                    _featuredPlaylist.value = pl
-                    _featuredSongs.value = songs
+                // 1. Load Latest Trending Hits (50 songs)
+                val newHits = MusicApiClient.searchSongs("Latest Bollywood 2026", limit = 50)
+                if (newHits.isNotEmpty()) {
+                    _trendingSongs.value = newHits
                 }
 
-                // 2. Load Hindi top hits playlists (User request #1)
-                val playlists = MusicApiClient.searchPlaylists("Hindi top hits", limit = 15)
+                // 2. Load Featured Playlist (50 songs)
+                val (pl, songs) = MusicApiClient.getPlaylistDetails("1167751266", limit = 50)
+                if (pl != null) {
+                    _featuredPlaylist.value = pl
+                    _featuredSongs.value = if (songs.isNotEmpty()) songs else newHits.take(50)
+                } else if (newHits.isNotEmpty()) {
+                    val virtualPl = MusicPlaylist(
+                        id = "featured_2026",
+                        name = "🔥 নতুন সুপারহিট গান ২০২৬",
+                        description = "Latest Bollywood & Bangla Hits",
+                        imageUrl = newHits.first().imageUrl,
+                        songCount = newHits.size
+                    )
+                    _featuredPlaylist.value = virtualPl
+                    _featuredSongs.value = newHits
+                }
+
+                // 3. Load Top Trending Playlists
+                val playlists = MusicApiClient.searchPlaylists("Hindi top hits 2026", limit = 20)
                 if (playlists.isNotEmpty()) {
                     _topPlaylists.value = playlists
                 }
 
-                // 3. Load Popular Albums (e.g. Arijit Singh / Bollywood hits)
-                val albums = MusicApiClient.searchAlbums("Bollywood hits", limit = 15)
+                // 4. Load Popular Albums (e.g. Arijit Singh, Bollywood Hits, Anirudh)
+                val albums = MusicApiClient.searchAlbums("Arijit Singh Bollywood Hits", limit = 20)
                 if (albums.isNotEmpty()) {
                     _popularAlbums.value = albums
-                }
-
-                // 4. Load Bindu Specials & Hindi Golden Hits
-                val binduSongs = MusicApiClient.searchSongs("Bindu", limit = 15)
-                if (binduSongs.isNotEmpty()) {
-                    _trendingSongs.value = binduSongs
-                } else if (songs.isNotEmpty()) {
-                    _trendingSongs.value = songs.take(15)
                 }
             } catch (e: Exception) {
                 Log.e("MusicRepository", "Error refreshing home music", e)
@@ -101,8 +109,7 @@ class MusicRepository(private val context: Context) {
         return if (!category.playlistId.isNullOrEmpty()) {
             MusicApiClient.getPlaylistDetails(category.playlistId, limit = 50)
         } else {
-            // First try searching songs, if few try playlist search
-            val songs = MusicApiClient.searchSongs(category.query, limit = 30)
+            val songs = MusicApiClient.searchSongs(category.query, limit = 50)
             val pl = MusicPlaylist(
                 id = category.id,
                 name = category.titleBn,
@@ -127,7 +134,7 @@ class MusicRepository(private val context: Context) {
     }
 
     suspend fun searchSongsOnly(query: String): List<MusicTrack> {
-        return MusicApiClient.searchSongs(query, limit = 30)
+        return MusicApiClient.searchSongs(query, limit = 50)
     }
 
     private fun loadFavoriteSongIds() {

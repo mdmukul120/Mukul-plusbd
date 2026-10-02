@@ -293,9 +293,9 @@ object MusicApiClient {
         }
 
     /**
-     * Search songs by query e.g. "Bindu" or "Chura Ke Dil Mera"
+     * Search songs by query e.g. "Bindu" or "Chura Ke Dil Mera" (50 songs)
      */
-    suspend fun searchSongs(query: String, limit: Int = 30): List<MusicTrack> =
+    suspend fun searchSongs(query: String, limit: Int = 50): List<MusicTrack> =
         withContext(Dispatchers.IO) {
             try {
                 val encoded = URLEncoder.encode(query, "UTF-8")
@@ -317,63 +317,17 @@ object MusicApiClient {
         }
 
     /**
-     * Global Search: query returns songs, albums, and playlists
+     * Global Search: query returns 50 songs, plus albums and playlists
      */
     suspend fun globalSearch(query: String): Triple<List<MusicTrack>, List<MusicAlbum>, List<MusicPlaylist>> =
         withContext(Dispatchers.IO) {
             try {
-                val encoded = URLEncoder.encode(query, "UTF-8")
-                val body = get("/api/search?query=$encoded") ?: return@withContext Triple(emptyList(), emptyList(), emptyList())
-                val json = JSONObject(body)
-                val data = json.optJSONObject("data") ?: return@withContext Triple(emptyList(), emptyList(), emptyList())
+                // Fetch up to 50 songs directly for comprehensive search
+                val songs50 = searchSongs(query, limit = 50)
+                val albums20 = searchAlbums(query, limit = 20)
+                val playlists20 = searchPlaylists(query, limit = 20)
 
-                val songs = mutableListOf<MusicTrack>()
-                val albums = mutableListOf<MusicAlbum>()
-                val playlists = mutableListOf<MusicPlaylist>()
-
-                // Songs
-                val songsObj = data.optJSONObject("songs")
-                val songResults = songsObj?.optJSONArray("results") ?: JSONArray()
-                for (i in 0 until songResults.length()) {
-                    val obj = songResults.optJSONObject(i) ?: continue
-                    songs.add(parseSongJson(obj))
-                }
-
-                // Albums
-                val albumsObj = data.optJSONObject("albums")
-                val albumResults = albumsObj?.optJSONArray("results") ?: JSONArray()
-                for (i in 0 until albumResults.length()) {
-                    val obj = albumResults.optJSONObject(i) ?: continue
-                    albums.add(
-                        MusicAlbum(
-                            id = obj.optString("id"),
-                            name = obj.optString("title", obj.optString("name")),
-                            artistNames = obj.optString("description", obj.optString("subtitle", "")),
-                            imageUrl = extractImageUrl(obj.opt("image")),
-                            year = obj.optString("year", ""),
-                            songCount = 0
-                        )
-                    )
-                }
-
-                // Playlists
-                val plObj = data.optJSONObject("playlists")
-                val plResults = plObj?.optJSONArray("results") ?: JSONArray()
-                for (i in 0 until plResults.length()) {
-                    val obj = plResults.optJSONObject(i) ?: continue
-                    playlists.add(
-                        MusicPlaylist(
-                            id = obj.optString("id"),
-                            name = obj.optString("title", obj.optString("name")),
-                            description = obj.optString("description", ""),
-                            imageUrl = extractImageUrl(obj.opt("image")),
-                            songCount = 0,
-                            type = "playlist"
-                        )
-                    )
-                }
-
-                Triple(songs, albums, playlists)
+                Triple(songs50, albums20, playlists20)
             } catch (e: Exception) {
                 Log.e(TAG, "Error in global search for '$query'", e)
                 Triple(emptyList(), emptyList(), emptyList())

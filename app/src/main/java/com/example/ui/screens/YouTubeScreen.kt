@@ -861,6 +861,22 @@ fun YouTubeScreen(
                                 }
                             }
 
+                            Button(
+                                onClick = {
+                                    if (searchQuery.isNotBlank()) {
+                                        loadFeed(query = searchQuery)
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                                shape = RoundedCornerShape(14.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp),
+                                modifier = Modifier.height(38.dp)
+                            ) {
+                                Icon(Icons.Default.Search, contentDescription = "সার্চ", modifier = Modifier.size(15.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text("সার্চ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                            }
+
                             // Refresh Feed Button
                             IconButton(
                                 onClick = { loadFeed(selectedCategory, force = true) },
@@ -1192,15 +1208,26 @@ fun YouTubeScreen(
 
                                 Button(
                                     onClick = {
-                                        val taskId = InAppDownloader.startDownload(
-                                            context = context,
-                                            movieSlug = "yt_${res.videoId}",
-                                            title = videoToDownload.title,
-                                            poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
-                                            quality = res.format,
-                                            downloadUrl = res.downloadUrl
-                                        )
-                                        Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখুন", Toast.LENGTH_LONG).show()
+                                        if (res.downloadUrl.contains("savenow.to")) {
+                                            try {
+                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.downloadUrl))
+                                                context.startActivity(intent)
+                                                Toast.makeText(context, "ব্রাউজারে ডাউনলোড শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                            } catch (_: Exception) {
+                                                val alt = YouTubeDownloaderHelper.getBrowserDownloadUrl(res.videoId)
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(alt)))
+                                            }
+                                        } else {
+                                            val taskId = InAppDownloader.startDownload(
+                                                context = context,
+                                                movieSlug = "yt_${res.videoId}",
+                                                title = videoToDownload.title,
+                                                poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
+                                                quality = res.format,
+                                                downloadUrl = res.downloadUrl
+                                            )
+                                            Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখুন", Toast.LENGTH_LONG).show()
+                                        }
                                         showResolutionDialog = false
                                         targetDownloadVideo = null
                                     },
@@ -1241,15 +1268,26 @@ fun YouTubeScreen(
                                                 if (extractResult.isSuccess) {
                                                     val res = extractResult.getOrNull()
                                                     if (res != null && res.downloadUrl.isNotEmpty()) {
-                                                        InAppDownloader.startDownload(
-                                                            context = context,
-                                                            movieSlug = "yt_${res.videoId}",
-                                                            title = videoToDownload.title,
-                                                            poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
-                                                            quality = res.format,
-                                                            downloadUrl = res.downloadUrl
-                                                        )
-                                                        Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখুন", Toast.LENGTH_LONG).show()
+                                                        if (res.downloadUrl.contains("savenow.to")) {
+                                                            try {
+                                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.downloadUrl))
+                                                                context.startActivity(intent)
+                                                                Toast.makeText(context, "ব্রাউজারে ডাউনলোড শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                                            } catch (_: Exception) {
+                                                                val alt = YouTubeDownloaderHelper.getBrowserDownloadUrl(res.videoId)
+                                                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(alt)))
+                                                            }
+                                                        } else {
+                                                            InAppDownloader.startDownload(
+                                                                context = context,
+                                                                movieSlug = "yt_${res.videoId}",
+                                                                title = videoToDownload.title,
+                                                                poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
+                                                                quality = res.format,
+                                                                downloadUrl = res.downloadUrl
+                                                            )
+                                                            Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখুন", Toast.LENGTH_LONG).show()
+                                                        }
                                                         showResolutionDialog = false
                                                         targetDownloadVideo = null
                                                     } else {

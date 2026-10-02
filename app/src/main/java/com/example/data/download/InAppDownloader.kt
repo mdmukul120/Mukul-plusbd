@@ -280,7 +280,7 @@ object InAppDownloader {
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
                 .header("Accept", "*/*")
 
-            if (task.downloadUrl.contains("dramalinkbd.tv") || task.downloadUrl.contains("mukul-ott")) {
+            if (task.downloadUrl.contains("dramalinkbd.tv") || task.downloadUrl.contains("mukul-ott") || task.downloadUrl.contains("stream-proxy")) {
                 requestBuilder.header("Referer", "https://mukul-ott.ai.studio/")
             }
 
@@ -289,6 +289,14 @@ object InAppDownloader {
 
             if (!response.isSuccessful) {
                 val err = "সার্ভার এরর: HTTP ${response.code}"
+                updateTask(task.copy(status = DownloadStatus.FAILED, errorMessage = err))
+                DownloadNotificationHelper.showDownloadFailed(context, task, err)
+                return
+            }
+
+            val contentType = response.header("Content-Type").orEmpty()
+            if (contentType.contains("text/html", ignoreCase = true)) {
+                val err = "মিডিয়া ফাইল পাওয়া যায়নি (ওয়েব রিডাইরেক্ট)"
                 updateTask(task.copy(status = DownloadStatus.FAILED, errorMessage = err))
                 DownloadNotificationHelper.showDownloadFailed(context, task, err)
                 return

@@ -213,25 +213,46 @@ fun MukulOttScreen(
 
                 if (matchedSource != null) {
                     val streamCandidate = matchedSource.proxyUrl.ifEmpty {
-                        matchedSource.url.ifEmpty {
-                            matchedSource.directUrl.ifEmpty { matchedSource.downloadUrl }
-                        }
+                        if (matchedSource.url.isNotEmpty()) "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(matchedSource.url, "UTF-8")
+                        else matchedSource.directUrl.ifEmpty { matchedSource.downloadUrl }
                     }
                     activePlayUrl = streamCandidate
                     activeQualityLabel = "${matchedSource.quality}p"
                     activeEpisodeLabel = matchedSource.episode ?: "মেইন ভিডিও"
+                } else if (detail.watchSources.isNotEmpty()) {
+                    val firstSource = detail.watchSources.first()
+                    val candidate = firstSource.proxyUrl.ifEmpty {
+                        if (firstSource.url.isNotEmpty()) "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(firstSource.url, "UTF-8")
+                        else firstSource.downloadUrl
+                    }
+                    activePlayUrl = candidate
+                    activeQualityLabel = "${firstSource.quality}p"
+                    activeEpisodeLabel = firstSource.episode ?: "মেইন ভিডিও"
                 } else if (detail.watchUrl.isNotEmpty()) {
-                    activePlayUrl = detail.watchUrl
+                    val finalWatch = if (detail.watchUrl.startsWith("http") && !detail.watchUrl.contains("stream-proxy") && detail.watchUrl.contains("fsldownload")) {
+                        "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(detail.watchUrl, "UTF-8")
+                    } else detail.watchUrl
+                    activePlayUrl = finalWatch
                     activeQualityLabel = if (selectedMoviePreferredQuality.isNotEmpty()) selectedMoviePreferredQuality else detail.resolution.ifEmpty { "HD" }
                     activeEpisodeLabel = "মেইন ভিডিও"
                 } else if (detail.episodes.isNotEmpty()) {
                     val ep1 = detail.episodes.first()
-                    activePlayUrl = ep1.streamUrl.ifEmpty { ep1.downloadUrl }
+                    val epStream = ep1.sources.firstOrNull()?.let {
+                        it.proxyUrl.ifEmpty {
+                            if (it.url.isNotEmpty()) "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(it.url, "UTF-8") else ""
+                        }
+                    } ?: ep1.streamUrl
+                    activePlayUrl = if (epStream.startsWith("http") && !epStream.contains("stream-proxy") && epStream.contains("fsldownload")) {
+                        "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(epStream, "UTF-8")
+                    } else epStream
                     activeQualityLabel = "HD"
                     activeEpisodeLabel = ep1.title
                 } else if (detail.downloads.isNotEmpty()) {
                     val dl1 = detail.downloads.first()
-                    activePlayUrl = dl1.downloadUrl
+                    val dlCandidate = if (dl1.downloadUrl.startsWith("http") && !dl1.downloadUrl.contains("stream-proxy") && dl1.downloadUrl.contains("fsldownload")) {
+                        "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(dl1.downloadUrl, "UTF-8")
+                    } else dl1.downloadUrl
+                    activePlayUrl = dlCandidate
                     activeQualityLabel = dl1.quality
                     activeEpisodeLabel = dl1.episode ?: "মেইন ভিডিও"
                 }
@@ -690,20 +711,23 @@ fun MukulOttScreen(
                                                     }
                                                 }
                                             },
-                                            onClick = {
+                                             onClick = {
                                                 showDownloadDropdown = false
                                                 val slug = movieDetail?.slug ?: ""
                                                 val title = movieDetail?.title ?: "Movie"
                                                 val poster = movieDetail?.poster ?: ""
-                                                val url = opt.downloadUrl
-                                                if (url.isNotEmpty()) {
+                                                val rawUrl = opt.downloadUrl.ifEmpty { activePlayUrl ?: "" }
+                                                val cleanDlUrl = if (rawUrl.startsWith("http") && !rawUrl.contains("stream-proxy") && rawUrl.contains("fsldownload")) {
+                                                    "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(rawUrl, "UTF-8")
+                                                } else rawUrl
+                                                if (cleanDlUrl.isNotEmpty()) {
                                                     InAppDownloader.startDownload(
                                                         context = context,
                                                         movieSlug = slug,
                                                         title = title,
                                                         poster = poster,
                                                         quality = opt.quality,
-                                                        downloadUrl = url
+                                                        downloadUrl = cleanDlUrl
                                                     )
                                                     Toast.makeText(context, "${opt.quality} ডাউনলোড শুরু হয়েছে!", Toast.LENGTH_SHORT).show()
                                                 } else {
@@ -1189,6 +1213,18 @@ fun MukulOttScreen(
                                     .weight(1f)
                                     .height(44.dp)
                             )
+
+                            Button(
+                                onClick = { focusManager.clearFocus() },
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                                shape = RoundedCornerShape(20.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp),
+                                modifier = Modifier.height(44.dp)
+                            ) {
+                                Icon(Icons.Default.Search, contentDescription = "সার্চ", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("সার্চ", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
 
                         // Deep Search Status Banner (if active search)

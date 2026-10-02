@@ -278,21 +278,33 @@ object MukulOttRepository {
                 }
 
                 var proxy = wsObj.optString("proxy_url")
-                if (proxy.startsWith("/")) {
-                    proxy = "$BASE_URL$proxy"
+                val rawUrl = wsObj.optString("url")
+                val directUrl = wsObj.optString("direct_url")
+                val dlUrl = wsObj.optString("download_url")
+
+                if (proxy.isNotEmpty()) {
+                    if (proxy.startsWith("/")) {
+                        proxy = "$BASE_URL$proxy"
+                    }
+                } else if (rawUrl.isNotEmpty()) {
+                    proxy = "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(rawUrl, "UTF-8")
+                } else if (directUrl.isNotEmpty()) {
+                    proxy = "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(directUrl, "UTF-8")
+                } else if (dlUrl.isNotEmpty() && dlUrl.startsWith("http")) {
+                    proxy = "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(dlUrl, "UTF-8")
                 }
 
                 val ep = if (wsObj.isNull("episode")) defaultEp else wsObj.optString("episode")
 
                 return MukulOttWatchSource(
-                    url = wsObj.optString("url"),
-                    downloadUrl = wsObj.optString("download_url"),
+                    url = rawUrl,
+                    downloadUrl = dlUrl,
                     quality = qualityInt,
                     qualityLabel = wsObj.optString("quality_label"),
                     audio = wsObj.optString("audio"),
                     name = wsObj.optString("name"),
                     episode = ep,
-                    directUrl = wsObj.optString("direct_url"),
+                    directUrl = directUrl,
                     proxyUrl = proxy
                 )
             }
@@ -309,14 +321,24 @@ object MukulOttRepository {
                     qNum != null && it.quality == qNum
                 }
 
-                val directDl = if (explicitLink.startsWith("http")) {
+                val directDl = if (!matchingSource?.proxyUrl.isNullOrEmpty()) {
+                    matchingSource!!.proxyUrl
+                } else if (explicitLink.startsWith("http")) {
                     explicitLink
-                } else if (!matchingSource?.downloadUrl.isNullOrEmpty()) {
-                    matchingSource!!.downloadUrl
                 } else if (!matchingSource?.url.isNullOrEmpty()) {
-                    matchingSource!!.url
+                    "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(matchingSource!!.url, "UTF-8")
+                } else if (!matchingSource?.downloadUrl.isNullOrEmpty()) {
+                    if (matchingSource!!.downloadUrl.startsWith("http")) {
+                        "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(matchingSource!!.downloadUrl, "UTF-8")
+                    } else {
+                        matchingSource!!.downloadUrl
+                    }
                 } else if (matchingSources.isNotEmpty()) {
-                    matchingSources.first().downloadUrl.ifEmpty { matchingSources.first().url }
+                    val first = matchingSources.first()
+                    first.proxyUrl.ifEmpty {
+                        if (first.url.isNotEmpty()) "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(first.url, "UTF-8")
+                        else first.downloadUrl
+                    }
                 } else {
                     ""
                 }
@@ -427,18 +449,31 @@ object MukulOttRepository {
             val finalDownloads = if (topDownloads.isEmpty()) {
                 if (finalWatchSources.isNotEmpty()) {
                     finalWatchSources.map { src ->
+                        val streamDl = src.proxyUrl.ifEmpty {
+                            if (src.url.isNotEmpty()) "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(src.url, "UTF-8")
+                            else src.downloadUrl
+                        }
                         MukulOttDownloadOption(
                             quality = "${src.quality}p",
                             size = "",
                             episode = src.episode,
-                            downloadUrl = src.downloadUrl.ifEmpty { src.url }
+                            downloadUrl = streamDl
                         )
                     }
                 } else {
                     episodesList.flatMap { it.downloads }
                 }
             } else {
-                topDownloads
+                topDownloads.map { dl ->
+                    if (dl.downloadUrl.isEmpty() || dl.downloadUrl.contains("fsldownload")) {
+                        val matching = finalWatchSources.firstOrNull { src ->
+                            val qNum = dl.quality.filter { it.isDigit() }.toIntOrNull()
+                            qNum != null && src.quality == qNum
+                        } ?: finalWatchSources.firstOrNull()
+                        val newDl = matching?.proxyUrl?.ifEmpty { null } ?: dl.downloadUrl
+                        dl.copy(downloadUrl = newDl)
+                    } else dl
+                }
             }
 
             // Fallback watchUrl

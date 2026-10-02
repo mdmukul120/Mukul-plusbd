@@ -110,7 +110,74 @@ object YouTubeDownloaderHelper {
 
         onProgressStatus("ডাউনলোড লিঙ্ক তৈরি হচ্ছে...")
 
-        // Method 1 (Primary): Downclip & SaveNow API (user specified)
+        // Method 1 (Primary - Guaranteed Direct MP4 Video Stream with Audio):
+        try {
+            onProgressStatus("ডাইরেক্ট ভিডিও সার্ভার সংযোগ হচ্ছে...")
+            val pipedUrl = "https://api.piped.private.coffee/streams/$videoId"
+            val req = Request.Builder()
+                .url(pipedUrl)
+                .header("User-Agent", "Mozilla/5.0")
+                .header("Accept", "application/json")
+                .build()
+            val res = client.newCall(req).execute()
+            if (res.isSuccessful) {
+                val body = res.body?.string().orEmpty()
+                if (body.isNotEmpty()) {
+                    val json = JSONObject(body)
+                    val title = json.optString("title", defaultTitle)
+                    val videoStreams = json.optJSONArray("videoStreams")
+                    if (videoStreams != null && videoStreams.length() > 0) {
+                        var bestUrl = ""
+                        for (i in 0 until videoStreams.length()) {
+                            val vObj = videoStreams.getJSONObject(i)
+                            val vFormat = vObj.optString("format", "")
+                            val vQuality = vObj.optString("quality", "")
+                            val sUrl = vObj.optString("url", "")
+                            val isVideoOnly = vObj.optBoolean("videoOnly", false)
+
+                            if (sUrl.startsWith("http")) {
+                                if (format.contains("720") && vQuality.contains("720") && !isVideoOnly) {
+                                    bestUrl = sUrl
+                                    break
+                                } else if ((format.contains("360") || format == "mp4" || format == "18") && vQuality.contains("360") && !isVideoOnly) {
+                                    bestUrl = sUrl
+                                    break
+                                } else if (!isVideoOnly && (vFormat.contains("MP4") || vQuality.contains("p"))) {
+                                    if (bestUrl.isEmpty()) bestUrl = sUrl
+                                }
+                            }
+                        }
+
+                        if (bestUrl.isEmpty()) {
+                            for (i in 0 until videoStreams.length()) {
+                                val sUrl = videoStreams.getJSONObject(i).optString("url", "")
+                                if (sUrl.startsWith("http")) {
+                                    bestUrl = sUrl
+                                    break
+                                }
+                            }
+                        }
+
+                        if (bestUrl.isNotEmpty()) {
+                            onProgressStatus("ডাউনলোড লিঙ্ক প্রস্তুত!")
+                            return@withContext Result.success(
+                                ExtractionResult(
+                                    downloadUrl = bestUrl,
+                                    title = title,
+                                    thumbnail = defaultThumb,
+                                    format = format,
+                                    videoId = videoId
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Method 1 Piped notice: ${e.message}")
+        }
+
+        // Method 2: Downclip & SaveNow API (user specified)
         try {
             onProgressStatus("ডাউনলোড সার্ভার প্রস্তুত হচ্ছে...")
             val requestedFormat = when {
@@ -145,9 +212,9 @@ object YouTubeDownloaderHelper {
                     }
 
                     if (progressApiUrl.isNotEmpty()) {
-                        for (attempt in 1..25) {
-                            delay(1200)
-                            val pct = (attempt * 4).coerceAtMost(98)
+                        for (attempt in 1..15) {
+                            delay(900)
+                            val pct = (attempt * 6).coerceAtMost(98)
                             onProgressStatus("ডাউনলোড লিঙ্ক প্রস্তুত হচ্ছে ($pct%)...")
                             try {
                                 val pollReq = Request.Builder()
@@ -179,7 +246,7 @@ object YouTubeDownloaderHelper {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Method 1 Downclip notice: ${e.message}")
+            Log.w(TAG, "Method 2 Downclip notice: ${e.message}")
         }
 
         // Method 2: Invidious API Streams (Extracts real direct MP4 streams)
