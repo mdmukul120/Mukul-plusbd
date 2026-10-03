@@ -81,6 +81,15 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && (VideoPlayerState.isPlaying || VideoPlayerState.isFullScreen)) {
+            try {
+                enterPictureInPictureMode(android.app.PictureInPictureParams.Builder().build())
+            } catch (_: Exception) {}
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

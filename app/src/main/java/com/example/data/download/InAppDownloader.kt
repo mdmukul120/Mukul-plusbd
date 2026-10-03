@@ -142,6 +142,9 @@ object InAppDownloader {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val jsonArr = org.json.JSONArray()
             for (task in _completedDownloads.value) {
+                if (task.status != DownloadStatus.COMPLETED) continue
+                val file = File(task.filePath)
+                if (!file.exists() || file.length() < 50 * 1024) continue
                 val obj = org.json.JSONObject().apply {
                     put("id", task.id)
                     put("movieSlug", task.movieSlug)
@@ -161,48 +164,31 @@ object InAppDownloader {
     }
 
     private fun scanExistingFiles(context: Context) {
-        val dirsToScan = listOfNotNull(
-            getDownloadDirectory(context),
-            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
-            context.getExternalFilesDir(Environment.DIRECTORY_MOVIES),
-            File(context.filesDir, "downloads")
-        )
+        val downloadDir = getDownloadDirectory(context)
+        if (!downloadDir.exists()) return
 
         val existingMap = _completedDownloads.value.associateBy { it.filePath }.toMutableMap()
+        val currentActiveTasks = _tasks.value
         val list = mutableListOf<DownloadTask>()
 
-        for (dir in dirsToScan) {
-            if (!dir.exists()) continue
-            val files = dir.listFiles { f ->
-                if (!f.isFile) return@listFiles false
-                val n = f.name.lowercase()
-                n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".webm") || n.endsWith(".m4a") || n.endsWith(".mp3")
-            } ?: continue
+        val files = downloadDir.listFiles { f ->
+            if (!f.isFile) return@listFiles false
+            val n = f.name.lowercase()
+            if (n.endsWith(".downloading") || n.endsWith(".tmp")) return@listFiles false
+            (n.endsWith(".mp4") || n.endsWith(".mkv") || n.endsWith(".webm") || n.endsWith(".m4a") || n.endsWith(".mp3")) && f.length() > 50 * 1024
+        } ?: return
 
-            for (f in files) {
-                val existing = existingMap[f.absolutePath]
-                if (existing != null) {
-                    list.add(existing)
-                } else {
-                    val name = f.nameWithoutExtension
-                    val isAudio = f.name.endsWith(".mp3") || f.name.endsWith(".m4a")
-                    val task = DownloadTask(
-                        id = f.name,
-                        movieSlug = name,
-                        title = name.replace("_", " "),
-                        poster = "",
-                        quality = if (isAudio) "MP3" else if (f.name.contains("1080")) "1080p" else if (f.name.contains("720")) "720p" else "HD",
-                        downloadUrl = "",
-                        status = DownloadStatus.COMPLETED,
-                        progress = 1.0f,
-                        downloadedBytes = f.length(),
-                        totalBytes = f.length(),
-                        speedText = "অফলাইন প্রস্তুত",
-                        filePath = f.absolutePath
-                    )
-                    list.add(task)
-                    existingMap[f.absolutePath] = task
-                }
+        for (f in files) {
+            // If this file is currently being downloaded, do not add it as completed!
+            val isDownloadingNow = currentActiveTasks.values.any {
+                (it.filePath == f.absolutePath || it.id.contains(f.nameWithoutExtension)) &&
+                (it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.QUEUED)
+            }
+            if (isDownloadingNow) continue
+
+            val existing = existingMap[f.absolutePath]
+            if (existing != null && existing.status == DownloadStatus.COMPLETED) {
+                list.add(existing)
             }
         }
         _completedDownloads.value = list.distinctBy { it.filePath }
@@ -213,11 +199,11 @@ object InAppDownloader {
      * Check if a movie slug was completed
      */
     fun getCompletedMovie(movieSlug: String): DownloadTask? {
-        if (movieSlug.isEmpty()) return null
+        if (movieSlug.isBlank()) return null
         return _completedDownloads.value.firstOrNull {
-            it.movieSlug.equals(movieSlug, ignoreCase = true) ||
-            it.movieSlug.contains(movieSlug, ignoreCase = true) ||
-            it.id.contains(movieSlug, ignoreCase = true)
+            it.status == DownloadStatus.COMPLETED &&
+            (it.movieSlug.equals(movieSlug, ignoreCase = true) || it.id.equals(movieSlug, ignoreCase = true)) &&
+            File(it.filePath).let { f -> f.exists() && f.length() > 100 * 1024 }
         }
     }
 
@@ -293,14 +279,16 @@ object InAppDownloader {
 
         val downloadDir = getDownloadDirectory(context)
         val safeId = task.id.replace("[^a-zA-Z0-9_-]".toRegex(), "_")
+        val safeTitle = task.title.replace("[^a-zA-Z0-9_\u0980-\u09FF\\s-]".toRegex(), "").trim().replace("\\s+".toRegex(), "_").take(40)
         val isAudio = task.quality.contains("mp3", ignoreCase = true) ||
                 task.movieSlug.startsWith("music_") ||
                 task.id.startsWith("music_") ||
                 task.downloadUrl.contains(".mp3", ignoreCase = true) ||
                 task.downloadUrl.contains("mime=audio", ignoreCase = true)
         val ext = if (isAudio) ".mp3" else ".mp4"
-        val fileName = if (safeId.isNotBlank()) "${safeId}$ext" else "mukul_${if (isAudio) "audio" else "vid"}_${System.currentTimeMillis()}$ext"
+        val fileName = if (safeTitle.isNotBlank()) "${safeTitle}_${safeId}$ext" else if (safeId.isNotBlank()) "${safeId}$ext" else "mukul_${if (isAudio) "audio" else "vid"}_${System.currentTimeMillis()}$ext"
         val targetFile = File(downloadDir, fileName)
+        val tempFile = File(downloadDir, "${fileName}.downloading")
 
         var inputStream: InputStream? = null
         var outputStream: FileOutputStream? = null
@@ -335,6 +323,7 @@ object InAppDownloader {
                 if (call.isCanceled() || _tasks.value[task.id]?.status == DownloadStatus.CANCELLED) {
                     updateTask(task.copy(status = DownloadStatus.CANCELLED, speedText = "বাতিল করা হয়েছে"))
                     DownloadNotificationHelper.cancelNotification(context, task.id)
+                    if (tempFile.exists()) tempFile.delete()
                     if (targetFile.exists()) targetFile.delete()
                     return
                 }
@@ -362,7 +351,7 @@ object InAppDownloader {
 
             val totalBytes = body.contentLength()
             inputStream = body.byteStream()
-            outputStream = FileOutputStream(targetFile)
+            outputStream = FileOutputStream(tempFile)
 
             val buffer = ByteArray(32 * 1024)
             var downloadedBytes = 0L
@@ -374,6 +363,7 @@ object InAppDownloader {
             while (inputStream.read(buffer).also { read = it } != -1) {
                 // Check if user cancelled download mid-stream
                 if (!coroutineScope.coroutineContext.isActive || call.isCanceled() || _tasks.value[task.id]?.status == DownloadStatus.CANCELLED) {
+                    try { tempFile.delete() } catch (_: Exception) {}
                     try { targetFile.delete() } catch (_: Exception) {}
                     throw CancellationException("Cancelled by user")
                 }
@@ -409,6 +399,12 @@ object InAppDownloader {
             }
 
             outputStream.flush()
+            outputStream.close()
+            outputStream = null
+
+            // Rename temp file to target file atomically
+            if (targetFile.exists()) targetFile.delete()
+            tempFile.renameTo(targetFile)
 
             val completedTask = task.copy(
                 status = DownloadStatus.COMPLETED,

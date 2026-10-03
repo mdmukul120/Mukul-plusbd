@@ -330,9 +330,25 @@ fun VideoPlayerView(
         onDispose {
             com.example.data.util.VideoPlayerState.isFullScreen = false
             if (activity != null) {
-                val window = activity.window
-                val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
-                insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                try {
+                    activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    val window = activity.window
+                    val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                    insetsController.show(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // Always reset orientation when leaving the player screen
+    DisposableEffect(Unit) {
+        onDispose {
+            com.example.data.util.VideoPlayerState.isPlaying = false
+            com.example.data.util.VideoPlayerState.isFullScreen = false
+            activity?.let { act ->
+                try {
+                    act.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                } catch (_: Exception) {}
             }
         }
     }

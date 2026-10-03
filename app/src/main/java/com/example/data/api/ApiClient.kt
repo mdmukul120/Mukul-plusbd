@@ -497,6 +497,7 @@ object ApiClient {
                 var currentLogo = ""
                 var currentGroup = "General"
                 var currentId = ""
+                val seenUrls = HashSet<String>()
 
                 val idRegex = Regex("""tvg-id="([^"]*)"""")
                 val logoRegex = Regex("""tvg-logo="([^"]*)"""")
@@ -519,7 +520,7 @@ object ApiClient {
                     } else if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
                         if (currentChannelName.isNotEmpty()) {
                             val streamUrl = trimmed
-                            if (channels.none { it.streamUrl == streamUrl || it.name.equals(currentChannelName, ignoreCase = true) }) {
+                            if (seenUrls.add(streamUrl)) {
                                 channels.add(
                                     TvChannel(
                                         id = if (currentId.isNotEmpty()) currentId else "iptv_${channels.size}",

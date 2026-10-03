@@ -6,6 +6,7 @@ import androidx.compose.runtime.setValue
 
 object VideoPlayerState {
     var isFullScreen by mutableStateOf(false)
+    var isPlaying by mutableStateOf(false)
 }
 
 object MukulOttNavState {

@@ -69,6 +69,12 @@ fun MusicScreen(
     var selectedAlbumDetail by remember { mutableStateOf<Pair<MusicAlbum?, List<MusicTrack>>?>(null) }
     var isLoadingDetail by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        if (featuredSongs.isEmpty() && trendingSongs.isEmpty()) {
+            musicRepository.refreshHomeMusic()
+        }
+    }
+
     // Category selection trigger
     fun selectCategory(cat: MusicCategory?) {
         selectedCategory = cat
@@ -554,6 +560,56 @@ fun MusicScreen(
                                 DownloadUtils.downloadMusic(context, track)
                             }
                         )
+                    }
+                }
+
+                // Loading or Empty State for Home
+                if (featuredPlaylist == null && topPlaylists.isEmpty() && popularAlbums.isEmpty() && songsToShow.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 60.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isLoadingHome) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    CircularProgressIndicator(color = BrandRed)
+                                    Spacer(modifier = Modifier.height(14.dp))
+                                    Text(
+                                        text = "মিউজিক গানসমূহ লোড হচ্ছে...",
+                                        color = TextSecondary,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            } else {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicOff,
+                                        contentDescription = null,
+                                        tint = TextMuted,
+                                        modifier = Modifier.size(44.dp)
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Text(
+                                        text = "হোম মিউজিক লোড করা সম্ভব হয়নি",
+                                        color = TextSecondary,
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Button(
+                                        onClick = { musicRepository.refreshHomeMusic() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("পুনরায় লোড করুন")
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

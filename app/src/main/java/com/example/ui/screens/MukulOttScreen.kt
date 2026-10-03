@@ -853,9 +853,9 @@ fun MukulOttScreen(
                                                 )
                                             }
 
-                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
 
-                                            // Play button for this resolution
+                                            // Play button for this resolution (compact circle)
                                             IconButton(
                                                 onClick = {
                                                     val playSrc = currentEpisodeSources.firstOrNull { it.quality == resItem.qualityInt }
@@ -865,19 +865,21 @@ fun MukulOttScreen(
                                                     activeQualityLabel = resItem.quality
                                                     Toast.makeText(context, "${resItem.quality} রেজুলেশনে চলছে", Toast.LENGTH_SHORT).show()
                                                 },
-                                                modifier = Modifier.size(28.dp).background(BrandRed.copy(alpha = 0.15f), CircleShape)
+                                                modifier = Modifier
+                                                    .size(22.dp)
+                                                    .background(BrandRed.copy(alpha = 0.2f), CircleShape)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.PlayArrow,
                                                     contentDescription = "Play",
                                                     tint = BrandRed,
-                                                    modifier = Modifier.size(16.dp)
+                                                    modifier = Modifier.size(13.dp)
                                                 )
                                             }
 
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Spacer(modifier = Modifier.width(3.dp))
 
-                                            // In-App Download button for this resolution
+                                            // In-App Download button for this resolution (compact round yellow/amber circle)
                                             IconButton(
                                                 onClick = {
                                                     val slug = movieDetail?.slug ?: ""
@@ -902,13 +904,15 @@ fun MukulOttScreen(
                                                     )
                                                     Toast.makeText(context, "${resItem.quality} ডাউনলোড শুরু হয়েছে! অ্যাপে সেভ হচ্ছে", Toast.LENGTH_SHORT).show()
                                                 },
-                                                modifier = Modifier.size(28.dp).background(CyanAccent.copy(alpha = 0.15f), CircleShape)
+                                                modifier = Modifier
+                                                    .size(22.dp)
+                                                    .background(Color(0xFFFFB020).copy(alpha = 0.22f), CircleShape)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Default.FileDownload,
                                                     contentDescription = "Download",
-                                                    tint = CyanAccent,
-                                                    modifier = Modifier.size(16.dp)
+                                                    tint = Color(0xFFFFB020),
+                                                    modifier = Modifier.size(13.dp)
                                                 )
                                             }
                                         }

@@ -63,39 +63,79 @@ class MusicRepository(private val context: Context) {
         scope.launch {
             _isLoading.value = true
             try {
-                // 1. Load Latest Trending Hits (50 songs)
-                val newHits = MusicApiClient.searchSongs("Latest Bollywood 2026", limit = 50)
+                // 1. Load Latest Trending Hits (with fallback queries)
+                var newHits = try {
+                    MusicApiClient.searchSongs("Latest Bollywood 2026", limit = 50)
+                } catch (_: Exception) { emptyList() }
+
+                if (newHits.isEmpty()) {
+                    newHits = try {
+                        MusicApiClient.searchSongs("Arijit Singh", limit = 50)
+                    } catch (_: Exception) { emptyList() }
+                }
+                if (newHits.isEmpty()) {
+                    newHits = try {
+                        MusicApiClient.searchSongs("Hindi Top Hits", limit = 50)
+                    } catch (_: Exception) { emptyList() }
+                }
                 if (newHits.isNotEmpty()) {
                     _trendingSongs.value = newHits
                 }
 
-                // 2. Load Featured Playlist (50 songs)
-                val (pl, songs) = MusicApiClient.getPlaylistDetails("1167751266", limit = 50)
-                if (pl != null) {
-                    _featuredPlaylist.value = pl
-                    _featuredSongs.value = if (songs.isNotEmpty()) songs else newHits.take(50)
-                } else if (newHits.isNotEmpty()) {
-                    val virtualPl = MusicPlaylist(
-                        id = "featured_2026",
-                        name = "🔥 নতুন সুপারহিট গান ২০২৬",
-                        description = "Latest Bollywood & Bangla Hits",
-                        imageUrl = newHits.first().imageUrl,
-                        songCount = newHits.size
-                    )
-                    _featuredPlaylist.value = virtualPl
-                    _featuredSongs.value = newHits
+                // 2. Load Featured Playlist
+                try {
+                    val (pl, songs) = MusicApiClient.getPlaylistDetails("1167751266", limit = 50)
+                    if (pl != null) {
+                        _featuredPlaylist.value = pl
+                        _featuredSongs.value = if (songs.isNotEmpty()) songs else newHits.take(50)
+                    } else if (newHits.isNotEmpty()) {
+                        val virtualPl = MusicPlaylist(
+                            id = "featured_2026",
+                            name = "🔥 নতুন সুপারহিট গান ২০২৬",
+                            description = "Latest Bollywood & Bangla Hits",
+                            imageUrl = newHits.first().imageUrl,
+                            songCount = newHits.size
+                        )
+                        _featuredPlaylist.value = virtualPl
+                        _featuredSongs.value = newHits
+                    }
+                } catch (_: Exception) {
+                    if (newHits.isNotEmpty()) {
+                        _featuredPlaylist.value = MusicPlaylist(
+                            id = "featured_fallback",
+                            name = "🔥 নতুন সুপারহিট গান ২০২৬",
+                            description = "Latest Bollywood Hits",
+                            imageUrl = newHits.first().imageUrl,
+                            songCount = newHits.size
+                        )
+                        _featuredSongs.value = newHits
+                    }
                 }
 
                 // 3. Load Top Trending Playlists
-                val playlists = MusicApiClient.searchPlaylists("Hindi top hits 2026", limit = 20)
-                if (playlists.isNotEmpty()) {
-                    _topPlaylists.value = playlists
+                try {
+                    var playlists = MusicApiClient.searchPlaylists("Hindi top hits 2026", limit = 20)
+                    if (playlists.isEmpty()) {
+                        playlists = MusicApiClient.searchPlaylists("Bollywood hits", limit = 20)
+                    }
+                    if (playlists.isNotEmpty()) {
+                        _topPlaylists.value = playlists
+                    }
+                } catch (e: Exception) {
+                    Log.e("MusicRepository", "Error loading playlists", e)
                 }
 
-                // 4. Load Popular Albums (e.g. Arijit Singh, Bollywood Hits, Anirudh)
-                val albums = MusicApiClient.searchAlbums("Arijit Singh Bollywood Hits", limit = 20)
-                if (albums.isNotEmpty()) {
-                    _popularAlbums.value = albums
+                // 4. Load Popular Albums
+                try {
+                    var albums = MusicApiClient.searchAlbums("Arijit Singh Bollywood Hits", limit = 20)
+                    if (albums.isEmpty()) {
+                        albums = MusicApiClient.searchAlbums("Bollywood", limit = 20)
+                    }
+                    if (albums.isNotEmpty()) {
+                        _popularAlbums.value = albums
+                    }
+                } catch (e: Exception) {
+                    Log.e("MusicRepository", "Error loading albums", e)
                 }
             } catch (e: Exception) {
                 Log.e("MusicRepository", "Error refreshing home music", e)
