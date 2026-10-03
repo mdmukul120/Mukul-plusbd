@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import com.example.data.download.InAppDownloader
+import com.example.data.model.MusicTrack
 
 object DownloadUtils {
 
@@ -17,6 +19,7 @@ object DownloadUtils {
         // Common media/archive/app extensions
         val extensions = listOf(
             ".mp4", ".mkv", ".avi", ".mov", ".flv", ".webm", ".ts",
+            ".mp3", ".m4a", ".aac", ".flac", ".wav", ".ogg",
             ".zip", ".rar", ".7z", ".tar", ".gz", ".apk", ".iso", ".torrent", ".pdf"
         )
         if (extensions.any { lower.contains(it) }) return true
@@ -32,43 +35,48 @@ object DownloadUtils {
     }
 
     /**
-     * Explicitly opens the given download link in Google Chrome.
-     * If Chrome is not installed on the device, seamlessly falls back to the system browser chooser.
+     * Downloads a MusicTrack directly inside the application without navigating to browser.
+     */
+    fun downloadMusic(context: Context, track: MusicTrack) {
+        val taskId = InAppDownloader.downloadMusicTrack(context, track)
+        Toast.makeText(context, "গানটি অ্যাপ্লিকেশনে ডাউনলোড হচ্ছে! ডাউনলোড পেজে প্লে করতে পারবেন", Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * In-app download handler replacing external browser redirect.
+     * Starts download directly inside the app.
      */
     fun openDownloadInChrome(context: Context, url: String?) {
         if (url.isNullOrBlank()) {
-            Toast.makeText(context, "ডাউনলোড লিংক পাওয়া যায়নি (Download URL not found)", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "ডাউনলোড লিংক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
             return
         }
 
         val trimmedUrl = url.trim()
+        val isAudio = trimmedUrl.contains(".mp3") || trimmedUrl.contains(".m4a") ||
+                trimmedUrl.contains("audio") || trimmedUrl.contains("saavncdn") ||
+                trimmedUrl.contains("jiosaavn")
+
+        val title = if (isAudio) "অফলাইন গান" else "মিডিয়া ফাইল"
+        val quality = if (isAudio) "320kbps MP3" else "HD"
+        val slug = if (isAudio) "music_${System.currentTimeMillis()}" else "file_${System.currentTimeMillis()}"
 
         try {
-            // Priority 1: Launch directly with Google Chrome package
-            val chromeIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trimmedUrl)).apply {
-                setPackage("com.android.chrome")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            context.startActivity(chromeIntent)
-            Toast.makeText(context, "ক্রোম ব্রাউজারে ডাউনলোড খোলা হচ্ছে...", Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
-            // Priority 2: Fallback to general browser chooser if Chrome package is absent
-            try {
-                val genericIntent = Intent(Intent.ACTION_VIEW, Uri.parse(trimmedUrl)).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                val chooser = Intent.createChooser(genericIntent, "ক্রোম বা ব্রাউজারে ডাউনলোড করুন").apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(chooser)
-                Toast.makeText(context, "ব্রাউজারে ডাউনলোড খোলা হচ্ছে...", Toast.LENGTH_SHORT).show()
-            } catch (fallbackError: Exception) {
-                Toast.makeText(
-                    context,
-                    "ডাউনলোড লিংক ওপেন করতে সমস্যা: ${fallbackError.localizedMessage}",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
+            InAppDownloader.startDownload(
+                context = context,
+                movieSlug = slug,
+                title = title,
+                poster = "",
+                quality = quality,
+                downloadUrl = trimmedUrl
+            )
+            Toast.makeText(
+                context,
+                "অ্যাপ্লিকেশনে ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখতে পারবেন",
+                Toast.LENGTH_LONG
+            ).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "ডাউনলোড শুরু করতে সমস্যা: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
         }
     }
 }

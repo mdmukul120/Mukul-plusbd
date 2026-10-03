@@ -94,14 +94,61 @@ fun ExtractorScreen(
         }
     }
 
+    // Active Playback State
+    var activePlayFilePath by remember { mutableStateOf<String?>(null) }
+    var activePlayTitle by remember { mutableStateOf("") }
+
+    // Direct Device Storage File Access Launcher (Opens any file from device)
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            val mimeType = context.contentResolver.getType(uri) ?: ""
+            val fileName = try {
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (cursor.moveToFirst() && nameIndex >= 0) cursor.getString(nameIndex) else "File"
+                } ?: "File"
+            } catch (_: Exception) { "File" }
+
+            val isAudio = mimeType.startsWith("audio/") || fileName.endsWith(".mp3", true) || fileName.endsWith(".m4a", true) || fileName.endsWith(".wav", true)
+            val isVideo = mimeType.startsWith("video/") || fileName.endsWith(".mp4", true) || fileName.endsWith(".mkv", true) || fileName.endsWith(".webm", true)
+
+            if (isAudio) {
+                val track = MusicTrack(
+                    id = uri.toString(),
+                    name = fileName,
+                    artistNames = "ডিভাইস অডিও",
+                    albumName = "লোকাল ফাইল",
+                    duration = 0,
+                    imageUrl = "",
+                    streamUrl = uri.toString(),
+                    downloadUrl = uri.toString()
+                )
+                MusicPlayerManager.playTrack(track, listOf(track))
+                Toast.makeText(context, "গান বাজানো হচ্ছে: $fileName", Toast.LENGTH_SHORT).show()
+            } else if (isVideo) {
+                activePlayFilePath = uri.toString()
+                activePlayTitle = fileName
+                Toast.makeText(context, "ভিডিও চালানো হচ্ছে: $fileName", Toast.LENGTH_SHORT).show()
+            } else {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(uri, mimeType.ifEmpty { "*/*" })
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "$fileName ওপেন করুন"))
+                } catch (_: Exception) {
+                    Toast.makeText(context, "ফাইল অ্যাক্সেস করা হয়েছে: $fileName", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     // Media Data States
     var localVideos by remember { mutableStateOf<List<LocalVideoItem>>(emptyList()) }
     var localAudios by remember { mutableStateOf<List<LocalAudioItem>>(emptyList()) }
     var isScanning by remember { mutableStateOf(false) }
-
-    // Active Playback State
-    var activePlayFilePath by remember { mutableStateOf<String?>(null) }
-    var activePlayTitle by remember { mutableStateOf("") }
 
     // In-App Downloader State
     val allTasks by InAppDownloader.tasks.collectAsState()

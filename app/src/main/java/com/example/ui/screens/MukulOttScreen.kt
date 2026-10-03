@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -52,8 +53,15 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+data class DownloadOptionView(
+    val quality: String,
+    val size: String,
+    val downloadUrl: String,
+    val qualityInt: Int
+)
+
 enum class OttFilterType {
-    ALL, MOVIES, SERIES, DOWNLOADED
+    ALL, MOVIES, SERIES, ANIME, DOWNLOADED
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,6 +83,11 @@ fun MukulOttScreen(
     // Pagination & Catalog State
     // ------------------------------------------------------------------------
     var movies by remember { mutableStateOf<List<MukulOttMovieItem>>(MukulOttRepository.cachedMovies) }
+    var moviesList by remember { mutableStateOf<List<MukulOttMovieItem>>(emptyList()) }
+    var animeList by remember { mutableStateOf<List<MukulOttMovieItem>>(emptyList()) }
+    var seriesList by remember { mutableStateOf<List<MukulOttMovieItem>>(emptyList()) }
+    var isLoadingCategory by remember { mutableStateOf(false) }
+
     var currentPage by remember { mutableIntStateOf(MukulOttRepository.cachedPage) }
     val totalPages = 200
     var isLoadingPage by remember { mutableStateOf(false) }
@@ -83,7 +96,7 @@ fun MukulOttScreen(
     var jumpPageInput by remember { mutableStateOf(MukulOttRepository.cachedPage.toString()) }
 
     // ------------------------------------------------------------------------
-    // Deep Search Across 1-200 Pages State
+    // Fast Instant Search State (uses https://mukul-ott.ai.studio/api/search?q=)
     // ------------------------------------------------------------------------
     var searchQuery by remember { mutableStateOf("") }
     var isDeepSearching by remember { mutableStateOf(false) }
@@ -93,9 +106,10 @@ fun MukulOttScreen(
     var searchJob by remember { mutableStateOf<Job?>(null) }
 
     // ------------------------------------------------------------------------
-    // Active Player State
+    // Active Player & Episode State
     // ------------------------------------------------------------------------
     var selectedMovieSlug by remember { mutableStateOf<String?>(null) }
+    var selectedEpisodeIndex by remember(selectedMovieSlug) { mutableIntStateOf(0) }
     var selectedMoviePreferredQuality by remember { mutableStateOf<String>("") }
     var movieDetail by remember { mutableStateOf<MukulOttMovieDetail?>(null) }
     var isLoadingDetail by remember { mutableStateOf(false) }
@@ -168,19 +182,15 @@ fun MukulOttScreen(
         } else {
             searchJob?.cancel()
             searchJob = coroutineScope.launch {
-                delay(350) // Debounce
+                delay(200) // Fast responsive debounce
                 isDeepSearching = true
-                searchScannedCount = 0
-                searchFoundCount = 0
-                val results = MukulOttRepository.searchMoviesAcrossPages(
-                    query = query,
-                    maxPages = 200,
-                    onProgress = { scanned, found ->
-                        searchScannedCount = scanned
-                        searchFoundCount = found
-                    }
-                )
-                deepSearchResults = results
+                searchScannedCount = 1
+                // Direct fast server-side query: https://mukul-ott.ai.studio/api/search?q=
+                val results = MukulOttRepository.searchMoviesFast(query)
+                val localMatches = movies.filter { it.title.contains(query, ignoreCase = true) }
+                val merged = (results + localMatches).distinctBy { it.slug }
+                deepSearchResults = merged
+                searchFoundCount = merged.size
                 isDeepSearching = false
             }
         }
@@ -298,6 +308,37 @@ fun MukulOttScreen(
                     .fillMaxSize()
                     .background(CinemaBackground)
             ) {
+                val currentEpisode = movieDetail?.episodes?.getOrNull(selectedEpisodeIndex) ?: movieDetail?.episodes?.firstOrNull()
+                val currentEpisodeSources = if (currentEpisode != null && currentEpisode.sources.isNotEmpty()) {
+                    currentEpisode.sources.sortedByDescending { it.quality }
+                } else {
+                    movieDetail?.watchSources?.sortedByDescending { it.quality } ?: emptyList()
+                }
+                val currentEpisodeDownloads = if (currentEpisode != null) {
+                    if (currentEpisode.downloads.isNotEmpty()) {
+                        currentEpisode.downloads
+                    } else {
+                        currentEpisodeSources.map { src ->
+                            MukulOttDownloadOption(
+                                quality = "${src.quality}p",
+                                size = if (src.quality >= 1080) "1.2 GB" else if (src.quality >= 720) "680 MB" else "380 MB",
+                                episode = currentEpisode.title,
+                                downloadUrl = src.proxyUrl.ifEmpty { src.url }
+                            )
+                        }
+                    }
+                } else {
+                    movieDetail?.downloads?.ifEmpty {
+                        currentEpisodeSources.map { src ->
+                            MukulOttDownloadOption(
+                                quality = "${src.quality}p",
+                                size = if (src.quality >= 1080) "1.2 GB" else if (src.quality >= 720) "680 MB" else "380 MB",
+                                episode = "মেইন ভিডিও",
+                                downloadUrl = src.proxyUrl.ifEmpty { src.url }
+                            )
+                        }
+                    } ?: emptyList()
+                }
                 // 1. VIDEO PLAYER VIEW (Responsive Viewport)
                 val playerBoxModifier = if (isPlayerFullScreen) {
                     Modifier.fillMaxSize()
@@ -422,168 +463,7 @@ fun MukulOttScreen(
                             )
                         }
 
-                        // (২) রেজুলেশন বাটন (Resolution Selector Dropdown - ALADA BUTTON)
-                        Box {
-                            OutlinedButton(
-                                onClick = { showResolutionDropdown = true },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = CinemaSurface,
-                                    contentColor = TextPrimary
-                                ),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                modifier = Modifier.height(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Tune,
-                                    contentDescription = null,
-                                    tint = CyanAccent,
-                                    modifier = Modifier.size(13.dp)
-                                )
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = if (activeQualityLabel.isNotEmpty()) "রেজুলেশন: $activeQualityLabel" else "রেজুলেশন",
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Icon(
-                                    imageVector = Icons.Default.ArrowDropDown,
-                                    contentDescription = null,
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                            }
-
-                            DropdownMenu(
-                                expanded = showResolutionDropdown,
-                                onDismissRequest = { showResolutionDropdown = false },
-                                modifier = Modifier.background(CinemaSurface)
-                            ) {
-                                Text(
-                                    text = "রেজুলেশন নির্বাচন করুন:",
-                                    color = BrandRed,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                                )
-                                val sources = movieDetail?.watchSources?.sortedByDescending { it.quality } ?: emptyList()
-                                if (sources.isNotEmpty()) {
-                                    sources.forEach { src ->
-                                        val isSelected = activeQualityLabel == "${src.quality}p"
-                                        DropdownMenuItem(
-                                            text = {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = "${src.quality}p Video",
-                                                        color = if (isSelected) BrandRed else TextPrimary,
-                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                        fontSize = 12.sp
-                                                    )
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                    if (src.quality >= 720) {
-                                                        Text("HD", color = BrandRedLight, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                                    } else {
-                                                        Text("SD", color = Color(0xFF10B981), fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                                    }
-                                                }
-                                            },
-                                            onClick = {
-                                                val playTarget = src.proxyUrl.ifEmpty {
-                                                    src.url.ifEmpty { src.directUrl.ifEmpty { src.downloadUrl } }
-                                                }
-                                                activePlayUrl = playTarget
-                                                activeQualityLabel = "${src.quality}p"
-                                                showResolutionDropdown = false
-                                                Toast.makeText(context, "${src.quality}p রেজুলেশনে চলছে", Toast.LENGTH_SHORT).show()
-                                            }
-                                        )
-                                    }
-                                } else {
-                                    DropdownMenuItem(
-                                        text = { Text("স্ট্যান্ডার্ড (${activeQualityLabel.ifEmpty { "Default" }})", color = TextPrimary, fontSize = 12.sp) },
-                                        onClick = { showResolutionDropdown = false }
-                                    )
-                                }
-                            }
-                        }
-
-                        // (৩) এপিসোড বাটন (Episode Selector Dropdown - ALADA BUTTON)
-                        val hasEpisodes = movieDetail?.episodes?.isNotEmpty() == true || movieDetail?.watchSources?.any { it.episode != null } == true
-                        if (hasEpisodes) {
-                            Box {
-                                OutlinedButton(
-                                    onClick = { showEpisodeDropdown = true },
-                                    shape = RoundedCornerShape(8.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(
-                                        containerColor = CinemaSurface,
-                                        contentColor = TextPrimary
-                                    ),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    modifier = Modifier.height(34.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.VideoLibrary,
-                                        contentDescription = null,
-                                        tint = Color(0xFFFFB020),
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(3.dp))
-                                    Text(
-                                        text = activeEpisodeLabel,
-                                        fontSize = 11.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Icon(
-                                        imageVector = Icons.Default.ArrowDropDown,
-                                        contentDescription = null,
-                                        tint = TextSecondary,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                }
-
-                                DropdownMenu(
-                                    expanded = showEpisodeDropdown,
-                                    onDismissRequest = { showEpisodeDropdown = false },
-                                    modifier = Modifier.background(CinemaSurface)
-                                ) {
-                                    Text(
-                                        text = "এপিসোড নির্বাচন করুন:",
-                                        color = BrandRed,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
-                                    )
-                                    movieDetail?.episodes?.forEach { ep ->
-                                        val isSelected = activeEpisodeLabel == ep.title
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    text = ep.title.ifEmpty { "Episode ${ep.episodeNumber}" },
-                                                    color = if (isSelected) BrandRed else TextPrimary,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                    fontSize = 12.sp
-                                                )
-                                            },
-                                            onClick = {
-                                                activePlayUrl = ep.streamUrl
-                                                activeEpisodeLabel = ep.title
-                                                showEpisodeDropdown = false
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // (৪) ডাউনলোড বাটন (Download Button with Direct Resolution Dropdown)
+                        // (২) ডাউনলোড বাটন (Current Episode Download Button with Direct Resolution Options)
                         Box {
                             Button(
                                 onClick = { showDownloadDropdown = true },
@@ -602,9 +482,11 @@ fun MukulOttScreen(
                                 )
                                 Spacer(modifier = Modifier.width(3.dp))
                                 Text(
-                                    text = "ডাউনলোড",
+                                    text = if (currentEpisode != null) "ডাউনলোড (${currentEpisode.title})" else "ডাউনলোড",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Icon(
                                     imageVector = Icons.Default.ArrowDropDown,
@@ -613,57 +495,36 @@ fun MukulOttScreen(
                                 )
                             }
 
-                            // ডাউনলোড বাটনে ক্লিক করলে রেজুলেশন ড্রপ ডাউন মেনু
+                            // ডাউনলোড বাটনে ক্লিক করলে এই পর্বের রেজুলেশন ড্রপ ডাউন মেনু
                             DropdownMenu(
                                 expanded = showDownloadDropdown,
                                 onDismissRequest = { showDownloadDropdown = false },
                                 modifier = Modifier.background(CinemaSurface)
                             ) {
                                 Text(
-                                    text = "ডাউনলোড রেজুলেশন পছন্দ করুন:",
+                                    text = if (currentEpisode != null) "${currentEpisode.title} ডাউনলোড রেজুলেশন:" else "ডাউনলোড রেজুলেশন পছন্দ করুন:",
                                     color = BrandRed,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                                 )
 
-                                val availableResolutions = if (movieDetail?.watchSources?.isNotEmpty() == true) {
-                                    movieDetail!!.watchSources.sortedByDescending { it.quality }.map { src ->
-                                        val matchingDl = movieDetail!!.downloads.firstOrNull {
-                                            it.quality.filter { c -> c.isDigit() } == src.quality.toString()
-                                        }
-                                        val dlUrl = src.downloadUrl.ifEmpty {
-                                            matchingDl?.downloadUrl?.ifEmpty { src.url } ?: src.url
-                                        }
-                                        DownloadOptionView(
-                                            quality = "${src.quality}p",
-                                            size = matchingDl?.size ?: "",
-                                            downloadUrl = dlUrl,
-                                            qualityInt = src.quality
-                                        )
+                                val availableResolutions = currentEpisodeDownloads.map { dl ->
+                                    val qNum = dl.quality.filter { it.isDigit() }.toIntOrNull() ?: 720
+                                    val matchedSource = currentEpisodeSources.firstOrNull { it.quality == qNum }
+                                    val finalDlUrl = when {
+                                        !matchedSource?.proxyUrl.isNullOrEmpty() -> matchedSource!!.proxyUrl
+                                        dl.downloadUrl.startsWith("http") -> dl.downloadUrl
+                                        dl.downloadUrl.startsWith("/") -> "https://mukul-ott.ai.studio${dl.downloadUrl}"
+                                        !matchedSource?.url.isNullOrEmpty() -> "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(matchedSource!!.url, "UTF-8")
+                                        else -> dl.downloadUrl
                                     }
-                                } else if (movieDetail?.downloads?.isNotEmpty() == true) {
-                                    movieDetail!!.downloads.map { dl ->
-                                        DownloadOptionView(
-                                            quality = dl.quality,
-                                            size = dl.size,
-                                            downloadUrl = dl.downloadUrl,
-                                            qualityInt = dl.quality.filter { it.isDigit() }.toIntOrNull() ?: 480
-                                        )
-                                    }
-                                } else if (movieDetail?.episodes?.isNotEmpty() == true) {
-                                    movieDetail!!.episodes.flatMap { it.downloads.ifEmpty { 
-                                        it.sources.map { s -> MukulOttDownloadOption(quality = "${s.quality}p", downloadUrl = s.downloadUrl.ifEmpty { s.url }) }
-                                    } }.distinctBy { it.downloadUrl }.map { dl ->
-                                        DownloadOptionView(
-                                            quality = dl.quality,
-                                            size = dl.size,
-                                            downloadUrl = dl.downloadUrl,
-                                            qualityInt = dl.quality.filter { it.isDigit() }.toIntOrNull() ?: 480
-                                        )
-                                    }
-                                } else {
-                                    emptyList()
+                                    DownloadOptionView(
+                                        quality = dl.quality,
+                                        size = dl.size.ifEmpty { if (qNum >= 1080) "1.2 GB" else if (qNum >= 720) "680 MB" else "380 MB" },
+                                        downloadUrl = finalDlUrl,
+                                        qualityInt = qNum
+                                    )
                                 }
 
                                 if (availableResolutions.isEmpty()) {
@@ -711,25 +572,29 @@ fun MukulOttScreen(
                                                     }
                                                 }
                                             },
-                                             onClick = {
+                                            onClick = {
                                                 showDownloadDropdown = false
                                                 val slug = movieDetail?.slug ?: ""
-                                                val title = movieDetail?.title ?: "Movie"
+                                                val movieTitle = movieDetail?.title ?: "Movie"
+                                                val title = if (currentEpisode != null) "$movieTitle - ${currentEpisode.title}" else movieTitle
                                                 val poster = movieDetail?.poster ?: ""
-                                                val rawUrl = opt.downloadUrl.ifEmpty { activePlayUrl ?: "" }
+                                                var rawUrl = opt.downloadUrl.ifEmpty { activePlayUrl ?: "" }
+                                                if (rawUrl.startsWith("/")) {
+                                                    rawUrl = "https://mukul-ott.ai.studio$rawUrl"
+                                                }
                                                 val cleanDlUrl = if (rawUrl.startsWith("http") && !rawUrl.contains("stream-proxy") && rawUrl.contains("fsldownload")) {
                                                     "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(rawUrl, "UTF-8")
                                                 } else rawUrl
                                                 if (cleanDlUrl.isNotEmpty()) {
                                                     InAppDownloader.startDownload(
                                                         context = context,
-                                                        movieSlug = slug,
+                                                        movieSlug = "${slug}_ep${selectedEpisodeIndex + 1}",
                                                         title = title,
                                                         poster = poster,
                                                         quality = opt.quality,
                                                         downloadUrl = cleanDlUrl
                                                     )
-                                                    Toast.makeText(context, "${opt.quality} ডাউনলোড শুরু হয়েছে!", Toast.LENGTH_SHORT).show()
+                                                    Toast.makeText(context, "${opt.quality} ডাউনলোড শুরু হয়েছে! অ্যাপে সেভ হচ্ছে", Toast.LENGTH_SHORT).show()
                                                 } else {
                                                     Toast.makeText(context, "ডাউনলোড লিঙ্ক প্রস্তুত নয়", Toast.LENGTH_SHORT).show()
                                                 }
@@ -740,7 +605,7 @@ fun MukulOttScreen(
                             }
                         }
 
-                        // (৫) তথ্য বাটন (Information & Screenshots Toggle)
+                        // (৩) তথ্য বাটন (Information & Screenshots Toggle)
                         FilledTonalButton(
                             onClick = { isDetailsExpanded = !isDetailsExpanded },
                             colors = ButtonDefaults.filledTonalButtonColors(
@@ -772,11 +637,292 @@ fun MukulOttScreen(
                         }
                     }
                 }
-            }
+
+                // 2.2 RESPONSIVE EPISODE SELECTOR (যদি সিরিজ বা একাধিক পর্ব থাকে)
+                if (movieDetail?.episodes?.isNotEmpty() == true) {
+                    Surface(
+                        color = CinemaSurface,
+                        border = androidx.compose.foundation.BorderStroke(0.5.dp, CinemaBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.VideoLibrary,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFFB020),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "📺 পর্ব নির্বাচন (${movieDetail!!.episodes.size}টি পর্ব):",
+                                        color = TextPrimary,
+                                        fontSize = 11.5.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                Text(
+                                    text = "নির্বাচিত: ${currentEpisode?.title.orEmpty()}",
+                                    color = BrandRedLight,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Horizontal responsive episodes list
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                itemsIndexed(movieDetail!!.episodes) { index, ep ->
+                                    val isSelected = selectedEpisodeIndex == index
+                                    Surface(
+                                        onClick = {
+                                            selectedEpisodeIndex = index
+                                            activeEpisodeLabel = ep.title
+                                            val epSrcs = ep.sources.ifEmpty { movieDetail!!.watchSources }
+                                            val targetStream = epSrcs.firstOrNull()?.let {
+                                                it.proxyUrl.ifEmpty { it.url }
+                                            } ?: ep.streamUrl
+                                            activePlayUrl = targetStream
+                                            activeQualityLabel = epSrcs.firstOrNull()?.let { "${it.quality}p" } ?: "HD"
+                                            Toast.makeText(context, "${ep.title} লোড হয়েছে", Toast.LENGTH_SHORT).show()
+                                        },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isSelected) BrandRed else CinemaSurfaceVariant,
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp,
+                                            if (isSelected) BrandRedLight else CinemaBorder
+                                        ),
+                                        modifier = Modifier.height(36.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 10.dp)
+                                        ) {
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.PlayArrow,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                            }
+                                            Text(
+                                                text = ep.title.ifEmpty { "পর্ব ${ep.episodeNumber}" },
+                                                color = if (isSelected) Color.White else TextPrimary,
+                                                fontSize = 11.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 2.3 RESPONSIVE RESOLUTION & DOWNLOAD SELECTOR (নির্বাচিত পর্বের সকল রেজুলেশন ও ডাউনলোড অপশন)
+                val currentResolutions = remember(currentEpisode, currentEpisodeSources, currentEpisodeDownloads) {
+                    val list = mutableListOf<DownloadOptionView>()
+                    if (currentEpisodeSources.isNotEmpty()) {
+                        currentEpisodeSources.forEach { src ->
+                            val matchedDl = currentEpisodeDownloads.firstOrNull { it.quality.filter { ch -> ch.isDigit() } == src.quality.toString() }
+                            val estSize = matchedDl?.size?.ifEmpty { null }
+                                ?: if (src.quality >= 1080) "1.2 GB" else if (src.quality >= 720) "680 MB" else "380 MB"
+                            val streamDl = if (src.proxyUrl.isNotEmpty()) {
+                                if (src.proxyUrl.startsWith("/")) "https://mukul-ott.ai.studio${src.proxyUrl}" else src.proxyUrl
+                            } else if (src.url.isNotEmpty()) {
+                                "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(src.url, "UTF-8")
+                            } else src.downloadUrl
+
+                            list.add(
+                                DownloadOptionView(
+                                    quality = "${src.quality}p",
+                                    size = estSize,
+                                    downloadUrl = streamDl,
+                                    qualityInt = src.quality
+                                )
+                            )
+                        }
+                    } else if (currentEpisodeDownloads.isNotEmpty()) {
+                        currentEpisodeDownloads.forEach { dl ->
+                            val qNum = dl.quality.filter { it.isDigit() }.toIntOrNull() ?: 720
+                            val streamDl = if (dl.downloadUrl.startsWith("/")) "https://mukul-ott.ai.studio${dl.downloadUrl}" else dl.downloadUrl
+                            list.add(
+                                DownloadOptionView(
+                                    quality = dl.quality,
+                                    size = dl.size.ifEmpty { if (qNum >= 1080) "1.2 GB" else if (qNum >= 720) "680 MB" else "380 MB" },
+                                    downloadUrl = streamDl,
+                                    qualityInt = qNum
+                                )
+                            )
+                        }
+                    }
+                    list.distinctBy { it.quality }
+                }
+
+                Surface(
+                    color = CinemaSurface,
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = CyanAccent,
+                                    modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (currentEpisode != null) "🎬 ${currentEpisode.title} এর রেজুলেশন ও ডাউনলোড লিঙ্ক:" else "🎬 ভিডিও রেজুলেশন ও ডাউনলোড লিঙ্ক:",
+                                    color = TextPrimary,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Surface(
+                                color = CyanAccent.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "চলছে: $activeQualityLabel",
+                                    color = CyanAccent,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        if (currentResolutions.isEmpty()) {
+                            Text("এই পর্বের রেজুলেশন ও ডাউনলোড লিংক প্রস্তুত হচ্ছে...", color = TextMuted, fontSize = 11.sp)
+                        } else {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(currentResolutions) { resItem ->
+                                    val isCurrentPlaying = activeQualityLabel == resItem.quality
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = if (isCurrentPlaying) CyanAccent.copy(alpha = 0.12f) else CinemaSurfaceVariant,
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp,
+                                            if (isCurrentPlaying) CyanAccent else CinemaBorder
+                                        ),
+                                        modifier = Modifier.padding(vertical = 2.dp)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    text = "${resItem.quality} ${if (resItem.qualityInt >= 720) "HD" else "SD"}",
+                                                    color = if (isCurrentPlaying) CyanAccent else TextPrimary,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = resItem.size,
+                                                    color = TextMuted,
+                                                    fontSize = 9.5.sp
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.width(8.dp))
+
+                                            // Play button for this resolution
+                                            IconButton(
+                                                onClick = {
+                                                    val playSrc = currentEpisodeSources.firstOrNull { it.quality == resItem.qualityInt }
+                                                    val playTarget = playSrc?.proxyUrl?.ifEmpty { playSrc.url } ?: resItem.downloadUrl
+                                                    val effectivePlay = if (playTarget.startsWith("/")) "https://mukul-ott.ai.studio$playTarget" else playTarget
+                                                    activePlayUrl = effectivePlay
+                                                    activeQualityLabel = resItem.quality
+                                                    Toast.makeText(context, "${resItem.quality} রেজুলেশনে চলছে", Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier.size(28.dp).background(BrandRed.copy(alpha = 0.15f), CircleShape)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.PlayArrow,
+                                                    contentDescription = "Play",
+                                                    tint = BrandRed,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+
+                                            Spacer(modifier = Modifier.width(4.dp))
+
+                                            // In-App Download button for this resolution
+                                            IconButton(
+                                                onClick = {
+                                                    val slug = movieDetail?.slug ?: ""
+                                                    val movieTitle = movieDetail?.title ?: "Movie"
+                                                    val dlTitle = if (currentEpisode != null) "$movieTitle - ${currentEpisode.title}" else movieTitle
+                                                    val poster = movieDetail?.poster ?: ""
+                                                    var cleanDl = resItem.downloadUrl
+                                                    if (cleanDl.startsWith("/")) {
+                                                        cleanDl = "https://mukul-ott.ai.studio$cleanDl"
+                                                    }
+                                                    if (cleanDl.contains("fsldownload.com") && !cleanDl.contains("stream-proxy")) {
+                                                        cleanDl = "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(cleanDl, "UTF-8")
+                                                    }
+                                                    val taskEpSlug = if (currentEpisode != null) "${slug}_ep${selectedEpisodeIndex + 1}" else slug
+                                                    InAppDownloader.startDownload(
+                                                        context = context,
+                                                        movieSlug = taskEpSlug,
+                                                        title = dlTitle,
+                                                        poster = poster,
+                                                        quality = resItem.quality,
+                                                        downloadUrl = cleanDl
+                                                    )
+                                                    Toast.makeText(context, "${resItem.quality} ডাউনলোড শুরু হয়েছে! অ্যাপে সেভ হচ্ছে", Toast.LENGTH_SHORT).show()
+                                                },
+                                                modifier = Modifier.size(28.dp).background(CyanAccent.copy(alpha = 0.15f), CircleShape)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.FileDownload,
+                                                    contentDescription = "Download",
+                                                    tint = CyanAccent,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                }
 
                 // 3. IN-APP DOWNLOAD PROGRESS BAR (যদি ডাউনলোড চলমান থাকে)
                 val activeDownloadTask = allTasks.values.firstOrNull {
-                    it.movieSlug == selectedMovieSlug &&
+                    selectedMovieSlug != null && it.movieSlug.startsWith(selectedMovieSlug!!) &&
                         (it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.QUEUED)
                 }
 
@@ -1289,32 +1435,74 @@ fun MukulOttScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
 
-                        // Filter Chips Row
-                        Row(
+                        // Filter Chips Row (Scrollable with distinct Movies, Series, Anime, All, Downloads)
+                        LazyRow(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            val allCount = if (searchQuery.isNotEmpty()) deepSearchResults.size else movies.size
-                            OttFilterChip(
-                                label = "সব মুভি ($allCount)",
-                                selected = selectedFilter == OttFilterType.ALL,
-                                onClick = { selectedFilter = OttFilterType.ALL }
-                            )
-                            OttFilterChip(
-                                label = "সিনেমা",
-                                selected = selectedFilter == OttFilterType.MOVIES,
-                                onClick = { selectedFilter = OttFilterType.MOVIES }
-                            )
-                            OttFilterChip(
-                                label = "সিরিজ",
-                                selected = selectedFilter == OttFilterType.SERIES,
-                                onClick = { selectedFilter = OttFilterType.SERIES }
-                            )
-                            OttFilterChip(
-                                label = "ডাউনলোড (${completedDownloads.size})",
-                                selected = selectedFilter == OttFilterType.DOWNLOADED,
-                                onClick = { selectedFilter = OttFilterType.DOWNLOADED }
-                            )
+                            item {
+                                OttFilterChip(
+                                    label = "🎬 মুভি",
+                                    selected = selectedFilter == OttFilterType.MOVIES,
+                                    onClick = {
+                                        selectedFilter = OttFilterType.MOVIES
+                                        if (moviesList.isEmpty()) {
+                                            coroutineScope.launch {
+                                                isLoadingCategory = true
+                                                moviesList = MukulOttRepository.getMoviesList()
+                                                isLoadingCategory = false
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                            item {
+                                OttFilterChip(
+                                    label = "📺 সিরিজ",
+                                    selected = selectedFilter == OttFilterType.SERIES,
+                                    onClick = {
+                                        selectedFilter = OttFilterType.SERIES
+                                        if (seriesList.isEmpty()) {
+                                            coroutineScope.launch {
+                                                isLoadingCategory = true
+                                                seriesList = MukulOttRepository.getSeriesList()
+                                                isLoadingCategory = false
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                            item {
+                                OttFilterChip(
+                                    label = "⛩️ Anime",
+                                    selected = selectedFilter == OttFilterType.ANIME,
+                                    onClick = {
+                                        selectedFilter = OttFilterType.ANIME
+                                        if (animeList.isEmpty()) {
+                                            coroutineScope.launch {
+                                                isLoadingCategory = true
+                                                animeList = MukulOttRepository.getAnimeList()
+                                                isLoadingCategory = false
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+                            item {
+                                val allCount = if (searchQuery.isNotEmpty()) deepSearchResults.size else movies.size
+                                OttFilterChip(
+                                    label = "সব ($allCount)",
+                                    selected = selectedFilter == OttFilterType.ALL,
+                                    onClick = { selectedFilter = OttFilterType.ALL }
+                                )
+                            }
+                            item {
+                                OttFilterChip(
+                                    label = "📥 ডাউনলোড (${completedDownloads.size})",
+                                    selected = selectedFilter == OttFilterType.DOWNLOADED,
+                                    onClick = { selectedFilter = OttFilterType.DOWNLOADED }
+                                )
+                            }
                         }
                     }
                 }
@@ -1412,14 +1600,21 @@ fun MukulOttScreen(
                         }
                     }
                 } else {
-                    // Movies to display: either deep search results or current page movies
-                    val sourceList = if (searchQuery.isNotEmpty()) deepSearchResults else movies
-                    val filteredMovies = remember(sourceList, selectedFilter) {
-                        sourceList.filter { item ->
+                    // Movies to display: search results or catalog filtered by distinct category
+                    val filteredMovies = remember(deepSearchResults, movies, moviesList, animeList, seriesList, searchQuery, selectedFilter) {
+                        if (searchQuery.isNotEmpty()) {
                             when (selectedFilter) {
-                                OttFilterType.MOVIES -> item.kind == "movie"
-                                OttFilterType.SERIES -> item.kind == "series"
-                                else -> true
+                                OttFilterType.MOVIES -> deepSearchResults.filter { it.kind == "movie" }
+                                OttFilterType.SERIES -> deepSearchResults.filter { it.kind == "series" }
+                                OttFilterType.ANIME -> deepSearchResults.filter { it.kind == "anime" }
+                                else -> deepSearchResults
+                            }
+                        } else {
+                            when (selectedFilter) {
+                                OttFilterType.MOVIES -> if (moviesList.isNotEmpty()) moviesList else movies.filter { it.kind == "movie" }
+                                OttFilterType.SERIES -> if (seriesList.isNotEmpty()) seriesList else movies.filter { it.kind == "series" }
+                                OttFilterType.ANIME -> if (animeList.isNotEmpty()) animeList else movies.filter { it.kind == "anime" }
+                                else -> movies
                             }
                         }
                     }
@@ -1685,13 +1880,6 @@ fun MukulOttScreen(
         }
     }
 }
-
-private data class DownloadOptionView(
-    val quality: String,
-    val size: String,
-    val downloadUrl: String,
-    val qualityInt: Int
-)
 
 @Composable
 private fun OttFilterChip(

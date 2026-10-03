@@ -115,6 +115,82 @@ object MukulOttRepository {
     }
 
     /**
+     * Fast server-side search directly using:
+     * https://mukul-ott.ai.studio/api/search?q=
+     */
+    suspend fun searchMoviesFast(query: String): List<MukulOttMovieItem> = withContext(Dispatchers.IO) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return@withContext emptyList()
+        try {
+            val url = "$BASE_URL/api/search?q=${java.net.URLEncoder.encode(trimmed, "UTF-8")}"
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Android; MukulPlusApp/1.0)")
+                .header("Accept", "application/json")
+                .build()
+            val resp = client.newCall(req).execute()
+            if (resp.isSuccessful) {
+                val body = resp.body?.string().orEmpty()
+                if (body.isNotEmpty()) {
+                    val json = JSONObject(body)
+                    val items = json.optJSONArray("items") ?: JSONArray()
+                    val list = mutableListOf<MukulOttMovieItem>()
+                    for (i in 0 until items.length()) {
+                        val it = items.getJSONObject(i)
+                        val slug = it.optString("slug")
+                        if (slug.isNotEmpty()) {
+                            list.add(
+                                MukulOttMovieItem(
+                                    slug = slug,
+                                    kind = it.optString("kind", "movie"),
+                                    title = it.optString("title"),
+                                    year = it.optInt("year", 2026),
+                                    qualityTag = it.optString("quality_tag"),
+                                    poster = it.optString("poster")
+                                )
+                            )
+                        }
+                    }
+                    return@withContext list
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Fast search failed for $trimmed", e)
+        }
+        return@withContext emptyList()
+    }
+
+    /**
+     * Load anime list directly via search query
+     */
+    suspend fun getAnimeList(): List<MukulOttMovieItem> = withContext(Dispatchers.IO) {
+        val animeSearch = searchMoviesFast("anime")
+        val cached = pageCache.values.flatten().filter { it.kind == "anime" }
+        (animeSearch + cached).distinctBy { it.slug }
+    }
+
+    /**
+     * Load web series list directly via search query and cache
+     */
+    suspend fun getSeriesList(): List<MukulOttMovieItem> = withContext(Dispatchers.IO) {
+        val seriesSearch = searchMoviesFast("series")
+        val seasonSearch = searchMoviesFast("season")
+        val cached = pageCache.values.flatten().filter { it.kind == "series" }
+        (seriesSearch + seasonSearch + cached).distinctBy { it.slug }
+    }
+
+    /**
+     * Load movies list directly via catalog and search query
+     */
+    suspend fun getMoviesList(): List<MukulOttMovieItem> = withContext(Dispatchers.IO) {
+        val movieSearch = searchMoviesFast("movie")
+        val page1 = getMovies(1)
+        val page2 = getMovies(2)
+        val cached = pageCache.values.flatten().filter { it.kind == "movie" }
+        (movieSearch + page1.filter { it.kind == "movie" } + page2.filter { it.kind == "movie" } + cached).distinctBy { it.slug }
+    }
+
+    /**
      * Search movies across 1 to 200 pages.
      * Uses server-side search API first (/api/search?q=...) for instant results,
      * then supplements by scanning paginated catalog up to maxPages.
@@ -269,7 +345,7 @@ object MukulOttRepository {
             }
 
             // Helper to parse watch source JSON object
-            fun parseWatchSource(wsObj: JSONObject, defaultEp: String? = null): MukulOttWatchSource {
+            fun parseWatchSource(wsObj: JSONObject, defaultEp: String? = null, epNumber: Int = 1): MukulOttWatchSource {
                 val rawQuality = wsObj.opt("quality")
                 val qualityInt = when (rawQuality) {
                     is Number -> rawQuality.toInt()
@@ -282,16 +358,19 @@ object MukulOttRepository {
                 val directUrl = wsObj.optString("direct_url")
                 val dlUrl = wsObj.optString("download_url")
 
+                val targetUrl = rawUrl.ifEmpty { directUrl.ifEmpty { dlUrl } }
                 if (proxy.isNotEmpty()) {
                     if (proxy.startsWith("/")) {
                         proxy = "$BASE_URL$proxy"
                     }
-                } else if (rawUrl.isNotEmpty()) {
-                    proxy = "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(rawUrl, "UTF-8")
-                } else if (directUrl.isNotEmpty()) {
-                    proxy = "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(directUrl, "UTF-8")
-                } else if (dlUrl.isNotEmpty() && dlUrl.startsWith("http")) {
-                    proxy = "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(dlUrl, "UTF-8")
+                    if (!proxy.contains("slug=")) {
+                        val sep = if (proxy.contains("?")) "&" else "?"
+                        proxy = "$proxy${sep}slug=${java.net.URLEncoder.encode(slug, "UTF-8")}&quality=$qualityInt&ep=$epNumber"
+                    }
+                } else if (targetUrl.isNotEmpty()) {
+                    val encodedTarget = java.net.URLEncoder.encode(targetUrl, "UTF-8")
+                    val encodedSlug = java.net.URLEncoder.encode(slug, "UTF-8")
+                    proxy = "$BASE_URL/api/stream-proxy?url=$encodedTarget&slug=$encodedSlug&quality=$qualityInt&ep=$epNumber"
                 }
 
                 val ep = if (wsObj.isNull("episode")) defaultEp else wsObj.optString("episode")
@@ -310,7 +389,7 @@ object MukulOttRepository {
             }
 
             // Helper to parse download option JSON object
-            fun parseDownloadOption(dlObj: JSONObject, matchingSources: List<MukulOttWatchSource>, defaultEp: String? = null): MukulOttDownloadOption {
+            fun parseDownloadOption(dlObj: JSONObject, matchingSources: List<MukulOttWatchSource>, defaultEp: String? = null, epNumber: Int = 1): MukulOttDownloadOption {
                 val q = dlObj.optString("quality")
                 val size = dlObj.optString("size")
                 val gatePath = dlObj.optString("gate_path")
@@ -326,18 +405,25 @@ object MukulOttRepository {
                 } else if (explicitLink.startsWith("http")) {
                     explicitLink
                 } else if (!matchingSource?.url.isNullOrEmpty()) {
-                    "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(matchingSource!!.url, "UTF-8")
+                    val encodedTarget = java.net.URLEncoder.encode(matchingSource!!.url, "UTF-8")
+                    val encodedSlug = java.net.URLEncoder.encode(slug, "UTF-8")
+                    "$BASE_URL/api/stream-proxy?url=$encodedTarget&slug=$encodedSlug&quality=${matchingSource!!.quality}&ep=$epNumber"
                 } else if (!matchingSource?.downloadUrl.isNullOrEmpty()) {
                     if (matchingSource!!.downloadUrl.startsWith("http")) {
-                        "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(matchingSource!!.downloadUrl, "UTF-8")
+                        val encodedTarget = java.net.URLEncoder.encode(matchingSource!!.downloadUrl, "UTF-8")
+                        val encodedSlug = java.net.URLEncoder.encode(slug, "UTF-8")
+                        "$BASE_URL/api/stream-proxy?url=$encodedTarget&slug=$encodedSlug&quality=720&ep=$epNumber"
                     } else {
                         matchingSource!!.downloadUrl
                     }
                 } else if (matchingSources.isNotEmpty()) {
                     val first = matchingSources.first()
                     first.proxyUrl.ifEmpty {
-                        if (first.url.isNotEmpty()) "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(first.url, "UTF-8")
-                        else first.downloadUrl
+                        if (first.url.isNotEmpty()) {
+                            val encodedTarget = java.net.URLEncoder.encode(first.url, "UTF-8")
+                            val encodedSlug = java.net.URLEncoder.encode(slug, "UTF-8")
+                            "$BASE_URL/api/stream-proxy?url=$encodedTarget&slug=$encodedSlug&quality=${first.quality}&ep=$epNumber"
+                        } else first.downloadUrl
                     }
                 } else {
                     ""
@@ -387,7 +473,7 @@ object MukulOttRepository {
                     val epWsArray = epObj.optJSONArray("sources")
                     if (epWsArray != null) {
                         for (sIdx in 0 until epWsArray.length()) {
-                            epSources.add(parseWatchSource(epWsArray.getJSONObject(sIdx), defaultEp = epTitle))
+                            epSources.add(parseWatchSource(epWsArray.getJSONObject(sIdx), defaultEp = epTitle, epNumber = epNum))
                         }
                     }
 
@@ -396,7 +482,30 @@ object MukulOttRepository {
                     val epDlArray = epObj.optJSONArray("downloads")
                     if (epDlArray != null) {
                         for (dIdx in 0 until epDlArray.length()) {
-                            epDownloads.add(parseDownloadOption(epDlArray.getJSONObject(dIdx), epSources, defaultEp = epTitle))
+                            epDownloads.add(parseDownloadOption(epDlArray.getJSONObject(dIdx), epSources, defaultEp = epTitle, epNumber = epNum))
+                        }
+                    }
+
+                    // If episode downloads list is empty, generate download options from episode sources
+                    if (epDownloads.isEmpty() && epSources.isNotEmpty()) {
+                        for (src in epSources) {
+                            val streamDl = src.proxyUrl.ifEmpty {
+                                if (src.url.isNotEmpty()) "$BASE_URL/api/stream-proxy?url=" + java.net.URLEncoder.encode(src.url, "UTF-8") + "&slug=" + java.net.URLEncoder.encode(slug, "UTF-8") + "&quality=${src.quality}&ep=$epNum"
+                                else src.downloadUrl
+                            }
+                            val estimatedSize = when {
+                                src.quality >= 1080 -> "1.2 GB"
+                                src.quality >= 720 -> "680 MB"
+                                else -> "390 MB"
+                            }
+                            epDownloads.add(
+                                MukulOttDownloadOption(
+                                    quality = "${src.quality}p",
+                                    size = estimatedSize,
+                                    episode = epTitle,
+                                    downloadUrl = streamDl
+                                )
+                            )
                         }
                     }
 
@@ -404,7 +513,7 @@ object MukulOttRepository {
                         it.proxyUrl.ifEmpty { it.url.ifEmpty { it.directUrl } }
                     } ?: epObj.optString("stream_url", epObj.optString("url"))
 
-                    val firstEpDl = epSources.firstOrNull()?.downloadUrl
+                    val firstEpDl = epSources.firstOrNull()?.proxyUrl?.ifEmpty { epSources.firstOrNull()?.downloadUrl }
                         ?: epDownloads.firstOrNull()?.downloadUrl
                         ?: epObj.optString("download_url")
 

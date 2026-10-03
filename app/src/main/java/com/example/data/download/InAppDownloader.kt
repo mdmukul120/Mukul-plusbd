@@ -60,6 +60,7 @@ object InAppDownloader {
 
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val activeJobs = ConcurrentHashMap<String, Job>()
+    private val activeCalls = ConcurrentHashMap<String, okhttp3.Call>()
 
     // Tasks Map
     private val _tasks = MutableStateFlow<Map<String, DownloadTask>>(emptyMap())
@@ -221,6 +222,23 @@ object InAppDownloader {
     }
 
     /**
+     * Helper to download a Music track directly inside the application without browser
+     */
+    fun downloadMusicTrack(context: Context, track: com.example.data.model.MusicTrack): String {
+        val dlUrl = if (track.downloadUrl.isNotEmpty()) track.downloadUrl else track.streamUrl
+        val slug = "music_${if (track.id.isNotEmpty()) track.id else System.currentTimeMillis().toString()}"
+        val trackName = if (track.name.isNotEmpty()) track.name else "গান"
+        return startDownload(
+            context = context,
+            movieSlug = slug,
+            title = trackName,
+            poster = track.imageUrl,
+            quality = "MP3",
+            downloadUrl = dlUrl
+        )
+    }
+
+    /**
      * Start an in-app download
      */
     fun startDownload(
@@ -231,7 +249,14 @@ object InAppDownloader {
         quality: String,
         downloadUrl: String
     ): String {
-        val taskId = "${movieSlug}_${quality.filter { it.isDigit() }.ifEmpty { "HD" }}"
+        // Resolve relative URLs to absolute OTT host
+        val cleanUrl = when {
+            downloadUrl.startsWith("/") -> "https://mukul-ott.ai.studio$downloadUrl"
+            downloadUrl.startsWith("http") -> downloadUrl
+            else -> downloadUrl
+        }
+
+        val taskId = "${movieSlug}_${quality.filter { it.isDigit() }.ifEmpty { if (quality.contains("mp3", ignoreCase = true)) "mp3" else "HD" }}"
 
         val existing = _tasks.value[taskId]
         if (existing != null && existing.status == DownloadStatus.DOWNLOADING) {
@@ -244,7 +269,7 @@ object InAppDownloader {
             title = title,
             poster = poster,
             quality = quality,
-            downloadUrl = downloadUrl,
+            downloadUrl = cleanUrl,
             status = DownloadStatus.QUEUED
         )
 
@@ -268,11 +293,18 @@ object InAppDownloader {
 
         val downloadDir = getDownloadDirectory(context)
         val safeId = task.id.replace("[^a-zA-Z0-9_-]".toRegex(), "_")
-        val fileName = if (safeId.isNotBlank()) "${safeId}.mp4" else "mukul_vid_${System.currentTimeMillis()}.mp4"
+        val isAudio = task.quality.contains("mp3", ignoreCase = true) ||
+                task.movieSlug.startsWith("music_") ||
+                task.id.startsWith("music_") ||
+                task.downloadUrl.contains(".mp3", ignoreCase = true) ||
+                task.downloadUrl.contains("mime=audio", ignoreCase = true)
+        val ext = if (isAudio) ".mp3" else ".mp4"
+        val fileName = if (safeId.isNotBlank()) "${safeId}$ext" else "mukul_${if (isAudio) "audio" else "vid"}_${System.currentTimeMillis()}$ext"
         val targetFile = File(downloadDir, fileName)
 
         var inputStream: InputStream? = null
         var outputStream: FileOutputStream? = null
+        var call: okhttp3.Call? = null
 
         try {
             val requestBuilder = Request.Builder()
@@ -280,14 +312,32 @@ object InAppDownloader {
                 .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
                 .header("Accept", "*/*")
 
-            if (task.downloadUrl.contains("dramalinkbd.tv") || task.downloadUrl.contains("mukul-ott") || task.downloadUrl.contains("stream-proxy")) {
+            if (task.downloadUrl.contains("mukul-ott") || task.downloadUrl.contains("stream-proxy") || task.downloadUrl.contains("fsldownload")) {
                 requestBuilder.header("Referer", "https://mukul-ott.ai.studio/")
             }
 
+            // Auto wrap fsldownload links with stream-proxy if not already wrapped
+            var effectiveUrl = task.downloadUrl
+            if (effectiveUrl.contains("fsldownload.com") && !effectiveUrl.contains("stream-proxy")) {
+                effectiveUrl = "https://mukul-ott.ai.studio/api/stream-proxy?url=" + java.net.URLEncoder.encode(effectiveUrl, "UTF-8")
+            } else if (effectiveUrl.startsWith("/")) {
+                effectiveUrl = "https://mukul-ott.ai.studio$effectiveUrl"
+            }
+            requestBuilder.url(effectiveUrl)
+
             val request = requestBuilder.build()
-            val response = client.newCall(request).execute()
+            call = client.newCall(request)
+            activeCalls[task.id] = call
+
+            val response = call.execute()
 
             if (!response.isSuccessful) {
+                if (call.isCanceled() || _tasks.value[task.id]?.status == DownloadStatus.CANCELLED) {
+                    updateTask(task.copy(status = DownloadStatus.CANCELLED, speedText = "বাতিল করা হয়েছে"))
+                    DownloadNotificationHelper.cancelNotification(context, task.id)
+                    if (targetFile.exists()) targetFile.delete()
+                    return
+                }
                 val err = "সার্ভার এরর: HTTP ${response.code}"
                 updateTask(task.copy(status = DownloadStatus.FAILED, errorMessage = err))
                 DownloadNotificationHelper.showDownloadFailed(context, task, err)
@@ -295,7 +345,7 @@ object InAppDownloader {
             }
 
             val contentType = response.header("Content-Type").orEmpty()
-            if (contentType.contains("text/html", ignoreCase = true)) {
+            if (contentType.contains("text/html", ignoreCase = true) && !task.downloadUrl.contains("stream-proxy")) {
                 val err = "মিডিয়া ফাইল পাওয়া যায়নি (ওয়েব রিডাইরেক্ট)"
                 updateTask(task.copy(status = DownloadStatus.FAILED, errorMessage = err))
                 DownloadNotificationHelper.showDownloadFailed(context, task, err)
@@ -322,6 +372,12 @@ object InAppDownloader {
             var bytesSinceLastUpdate = 0L
 
             while (inputStream.read(buffer).also { read = it } != -1) {
+                // Check if user cancelled download mid-stream
+                if (!coroutineScope.coroutineContext.isActive || call.isCanceled() || _tasks.value[task.id]?.status == DownloadStatus.CANCELLED) {
+                    try { targetFile.delete() } catch (_: Exception) {}
+                    throw CancellationException("Cancelled by user")
+                }
+
                 outputStream.write(buffer, 0, read)
                 downloadedBytes += read
                 bytesSinceLastUpdate += read
@@ -387,6 +443,18 @@ object InAppDownloader {
             DownloadNotificationHelper.cancelNotification(context, task.id)
             if (targetFile.exists()) targetFile.delete()
         } catch (e: Exception) {
+            val isCancelled = call?.isCanceled() == true ||
+                _tasks.value[task.id]?.status == DownloadStatus.CANCELLED ||
+                e.message?.contains("cancel", ignoreCase = true) == true ||
+                e.message?.contains("closed", ignoreCase = true) == true
+
+            if (isCancelled) {
+                updateTask(task.copy(status = DownloadStatus.CANCELLED, speedText = "বাতিল করা হয়েছে"))
+                DownloadNotificationHelper.cancelNotification(context, task.id)
+                if (targetFile.exists()) targetFile.delete()
+                return
+            }
+
             Log.e(TAG, "Download failed for ${task.title}", e)
             val err = e.message ?: "ডাউনলোড ব্যর্থ হয়েছে"
             updateTask(
@@ -401,17 +469,26 @@ object InAppDownloader {
                 inputStream?.close()
                 outputStream?.close()
             } catch (_: Exception) {}
+            activeCalls.remove(task.id)
             activeJobs.remove(task.id)
         }
     }
 
     fun cancelDownload(taskId: String) {
-        activeJobs[taskId]?.cancel()
-        activeJobs.remove(taskId)
         val current = _tasks.value[taskId]
         if (current != null) {
-            updateTask(current.copy(status = DownloadStatus.CANCELLED))
+            updateTask(current.copy(status = DownloadStatus.CANCELLED, speedText = "বাতিল করা হয়েছে"))
+            if (current.filePath.isNotEmpty()) {
+                try {
+                    val f = File(current.filePath)
+                    if (f.exists()) f.delete()
+                } catch (_: Exception) {}
+            }
         }
+        activeCalls[taskId]?.cancel()
+        activeCalls.remove(taskId)
+        activeJobs[taskId]?.cancel()
+        activeJobs.remove(taskId)
     }
 
     fun deleteDownloadedMovie(context: Context, taskId: String) {

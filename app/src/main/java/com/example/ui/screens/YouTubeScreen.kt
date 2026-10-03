@@ -1208,26 +1208,15 @@ fun YouTubeScreen(
 
                                 Button(
                                     onClick = {
-                                        if (res.downloadUrl.contains("savenow.to")) {
-                                            try {
-                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.downloadUrl))
-                                                context.startActivity(intent)
-                                                Toast.makeText(context, "ব্রাউজারে ডাউনলোড শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
-                                            } catch (_: Exception) {
-                                                val alt = YouTubeDownloaderHelper.getBrowserDownloadUrl(res.videoId)
-                                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(alt)))
-                                            }
-                                        } else {
-                                            val taskId = InAppDownloader.startDownload(
-                                                context = context,
-                                                movieSlug = "yt_${res.videoId}",
-                                                title = videoToDownload.title,
-                                                poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
-                                                quality = res.format,
-                                                downloadUrl = res.downloadUrl
-                                            )
-                                            Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখুন", Toast.LENGTH_LONG).show()
-                                        }
+                                        val taskId = InAppDownloader.startDownload(
+                                            context = context,
+                                            movieSlug = "yt_${res.videoId}",
+                                            title = videoToDownload.title,
+                                            poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
+                                            quality = res.format,
+                                            downloadUrl = res.downloadUrl
+                                        )
+                                        Toast.makeText(context, "${res.format} ভিডিও অ্যাপ্লিকেশনে ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখতে পারবেন", Toast.LENGTH_LONG).show()
                                         showResolutionDialog = false
                                         targetDownloadVideo = null
                                     },
@@ -1268,26 +1257,15 @@ fun YouTubeScreen(
                                                 if (extractResult.isSuccess) {
                                                     val res = extractResult.getOrNull()
                                                     if (res != null && res.downloadUrl.isNotEmpty()) {
-                                                        if (res.downloadUrl.contains("savenow.to")) {
-                                                            try {
-                                                                val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(res.downloadUrl))
-                                                                context.startActivity(intent)
-                                                                Toast.makeText(context, "ব্রাউজারে ডাউনলোড শুরু হচ্ছে...", Toast.LENGTH_SHORT).show()
-                                                            } catch (_: Exception) {
-                                                                val alt = YouTubeDownloaderHelper.getBrowserDownloadUrl(res.videoId)
-                                                                context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(alt)))
-                                                            }
-                                                        } else {
-                                                            InAppDownloader.startDownload(
-                                                                context = context,
-                                                                movieSlug = "yt_${res.videoId}",
-                                                                title = videoToDownload.title,
-                                                                poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
-                                                                quality = res.format,
-                                                                downloadUrl = res.downloadUrl
-                                                            )
-                                                            Toast.makeText(context, "ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখুন", Toast.LENGTH_LONG).show()
-                                                        }
+                                                        InAppDownloader.startDownload(
+                                                            context = context,
+                                                            movieSlug = "yt_${res.videoId}",
+                                                            title = videoToDownload.title,
+                                                            poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
+                                                            quality = res.format,
+                                                            downloadUrl = res.downloadUrl
+                                                        )
+                                                        Toast.makeText(context, "${res.format} ভিডিও অ্যাপ্লিকেশনে ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখতে পারবেন", Toast.LENGTH_LONG).show()
                                                         showResolutionDialog = false
                                                         targetDownloadVideo = null
                                                     } else {

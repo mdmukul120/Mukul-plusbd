@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 object ApiClient {
     private const val TAG = "ApiClient"
     private const val TMDB_API_KEY = "0b3d17a4fe3dd52593a48d9a0dad4bd6"
-    private const val IPTV_URL = "https://raw.githubusercontent.com/abusaeeidx/Ayna-BDIX-IPTV-Playlist/refs/heads/main/ayna-playlist.m3u"
+    private const val IPTV_URL = "https://mukul-ott.ai.studio/api/iptv/live.m3u"
     private const val HAMYRA_API_BASE = "https://hamyra-api.mdibrahimkhalil516.workers.dev"
     private const val HAMYRA_ORIGIN = "https://www.hamyra.xyz"
     private const val HAMYRA_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
@@ -480,60 +480,15 @@ object ApiClient {
         }
     }
 
-    // 7. Live TV Channels (Hamyra 320+ Live TV Channels & Ayna BDIX Streams)
+    // 7. Live TV Channels (Mukul OTT Verified Live IPTV Channels)
     suspend fun fetchIptvChannels(): List<TvChannel> = withContext(Dispatchers.IO) {
         val channels = mutableListOf<TvChannel>()
-        
-        // Step 1: Fetch verified live channels from Hamyra Live TV API
-        val token = getHamyraToken()
-        if (!token.isNullOrEmpty()) {
-            try {
-                val req = Request.Builder()
-                    .url("$HAMYRA_API_BASE/livetv/channels")
-                    .header("Authorization", "Bearer $token")
-                    .header("Origin", HAMYRA_ORIGIN)
-                    .header("Referer", "$HAMYRA_ORIGIN/")
-                    .header("User-Agent", HAMYRA_USER_AGENT)
-                    .build()
-                val response = client.newCall(req).execute()
-                val body = response.body?.string()
-                if (!body.isNullOrEmpty()) {
-                    val root = JSONObject(body)
-                    val items = root.optJSONArray("items")
-                    if (items != null) {
-                        for (i in 0 until items.length()) {
-                            val item = items.optJSONObject(i) ?: continue
-                            val stream = item.optString("stream")
-                            val name = item.optString("name").ifEmpty { item.optString("channel") }
-                            if (stream.isEmpty() || name.isEmpty()) continue
-                            val id = item.optString("id").ifEmpty { "hamyra_tv_$i" }
-                            val poster = item.optString("poster")
-                            val rawCategory = item.optString("category", "General")
-                            val category = rawCategory.replaceFirstChar { it.uppercase() }
-
-                            // Avoid exact stream duplicates
-                            if (channels.none { it.name.equals(name, ignoreCase = true) || it.streamUrl == stream }) {
-                                channels.add(
-                                    TvChannel(
-                                        id = id,
-                                        name = name,
-                                        logo = poster.ifEmpty { null },
-                                        groupTitle = category,
-                                        streamUrl = stream
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error fetching Hamyra Live TV channels", e)
-            }
-        }
-
-        // Step 2: Merge Ayna BDIX IPTV playlist with remote=no_check_ip bypass
         try {
-            val request = Request.Builder().url(IPTV_URL).build()
+            val request = Request.Builder()
+                .url(IPTV_URL)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+                .header("Accept", "*/*")
+                .build()
             val response = client.newCall(request).execute()
             val content = response.body?.string()
             if (!content.isNullOrEmpty()) {
@@ -543,41 +498,35 @@ object ApiClient {
                 var currentGroup = "General"
                 var currentId = ""
 
+                val idRegex = Regex("""tvg-id="([^"]*)"""")
+                val logoRegex = Regex("""tvg-logo="([^"]*)"""")
+                val groupRegex = Regex("""group-title="([^"]*)"""")
+                val nameRegex = Regex("""tvg-name="([^"]*)"""")
+
                 for (line in lines) {
                     val trimmed = line.trim()
                     if (trimmed.startsWith("#EXTINF:")) {
-                        val idMatch = Regex("""tvg-id="([^"]*)"""").find(trimmed)
-                        currentId = idMatch?.groupValues?.get(1) ?: ""
-
-                        val logoMatch = Regex("""tvg-logo="([^"]*)"""").find(trimmed)
-                        currentLogo = logoMatch?.groupValues?.get(1) ?: ""
-
-                        val groupMatch = Regex("""group-title="([^"]*)"""").find(trimmed)
-                        currentGroup = groupMatch?.groupValues?.get(1) ?: "General"
+                        currentId = idRegex.find(trimmed)?.groupValues?.get(1).orEmpty()
+                        currentLogo = logoRegex.find(trimmed)?.groupValues?.get(1).orEmpty()
+                        currentGroup = groupRegex.find(trimmed)?.groupValues?.get(1).orEmpty().ifEmpty { "General" }
 
                         val commaIndex = trimmed.lastIndexOf(',')
                         currentChannelName = if (commaIndex != -1 && commaIndex + 1 < trimmed.length) {
                             trimmed.substring(commaIndex + 1).trim()
                         } else {
-                            val nameMatch = Regex("""tvg-name="([^"]*)"""").find(trimmed)
-                            nameMatch?.groupValues?.get(1) ?: "Channel"
+                            nameRegex.find(trimmed)?.groupValues?.get(1).orEmpty().ifEmpty { "Live TV" }
                         }
                     } else if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
                         if (currentChannelName.isNotEmpty()) {
-                            val finalStreamUrl = if (trimmed.contains("aynaott.com") || trimmed.contains("ayna")) {
-                                if (!trimmed.contains("remote=no_check_ip")) {
-                                    if (trimmed.contains("?")) "$trimmed&remote=no_check_ip" else "$trimmed?remote=no_check_ip"
-                                } else trimmed
-                            } else trimmed
-
-                            if (channels.none { it.name.equals(currentChannelName, ignoreCase = true) }) {
+                            val streamUrl = trimmed
+                            if (channels.none { it.streamUrl == streamUrl || it.name.equals(currentChannelName, ignoreCase = true) }) {
                                 channels.add(
                                     TvChannel(
-                                        id = if (currentId.isNotEmpty()) currentId else "ch_${channels.size}",
+                                        id = if (currentId.isNotEmpty()) currentId else "iptv_${channels.size}",
                                         name = currentChannelName,
                                         logo = currentLogo.ifEmpty { null },
                                         groupTitle = currentGroup.ifEmpty { "General" },
-                                        streamUrl = finalStreamUrl
+                                        streamUrl = streamUrl
                                     )
                                 )
                             }
@@ -590,7 +539,7 @@ object ApiClient {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching Ayna IPTV playlist", e)
+            Log.e(TAG, "Error fetching Mukul OTT IPTV playlist", e)
         }
 
         channels

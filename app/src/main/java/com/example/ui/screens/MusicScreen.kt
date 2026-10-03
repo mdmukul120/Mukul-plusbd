@@ -273,8 +273,7 @@ fun MusicScreen(
                                     MusicPlayerManager.playTrack(track, searchSongs)
                                 },
                                 onDownload = {
-                                    val dlUrl = if (track.downloadUrl.isNotEmpty()) track.downloadUrl else track.streamUrl
-                                    DownloadUtils.openDownloadInChrome(context, dlUrl)
+                                    DownloadUtils.downloadMusic(context, track)
                                 }
                             )
                         }
@@ -449,8 +448,7 @@ fun MusicScreen(
                                 MusicPlayerManager.playTrack(track, categorySongs)
                             },
                             onDownload = {
-                                val dlUrl = if (track.downloadUrl.isNotEmpty()) track.downloadUrl else track.streamUrl
-                                DownloadUtils.openDownloadInChrome(context, dlUrl)
+                                DownloadUtils.downloadMusic(context, track)
                             }
                         )
                     }
@@ -553,8 +551,7 @@ fun MusicScreen(
                                 MusicPlayerManager.playTrack(track, songsToShow)
                             },
                             onDownload = {
-                                val dlUrl = if (track.downloadUrl.isNotEmpty()) track.downloadUrl else track.streamUrl
-                                DownloadUtils.openDownloadInChrome(context, dlUrl)
+                                DownloadUtils.downloadMusic(context, track)
                             }
                         )
                     }
@@ -573,8 +570,7 @@ fun MusicScreen(
                         MusicPlayerManager.playTrack(track, songs)
                     },
                     onDownloadSong = { track ->
-                        val dlUrl = if (track.downloadUrl.isNotEmpty()) track.downloadUrl else track.streamUrl
-                        DownloadUtils.openDownloadInChrome(context, dlUrl)
+                        DownloadUtils.downloadMusic(context, track)
                     }
                 )
             }
@@ -591,8 +587,7 @@ fun MusicScreen(
                         MusicPlayerManager.playTrack(track, songs)
                     },
                     onDownloadSong = { track ->
-                        val dlUrl = if (track.downloadUrl.isNotEmpty()) track.downloadUrl else track.streamUrl
-                        DownloadUtils.openDownloadInChrome(context, dlUrl)
+                        DownloadUtils.downloadMusic(context, track)
                     }
                 )
             }
