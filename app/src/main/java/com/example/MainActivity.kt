@@ -61,6 +61,7 @@ enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
     MOVIES("মুভি", Icons.Default.Movie),
     LIVE_TV("টিভি", Icons.Default.Tv),
+    BANGLA_OTT("বাংলা ওটিটি", Icons.Default.Subscriptions),
     MUSIC("মিউজিক", Icons.Default.MusicNote),
     YOUTUBE("ইউটিউব", Icons.Default.PlayCircle),
     WEATHER("আবহাওয়া", Icons.Default.WbSunny),
@@ -209,10 +210,10 @@ fun MukulPlusApp() {
         return
     }
 
-    // Modal Drawer for Sidebar (Disable gestures on Extractor/YouTube/Weather to prevent scroll conflict)
+    // Modal Drawer for Sidebar (Disable gestures on Extractor/YouTube/Weather/BanglaOtt to prevent scroll conflict)
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = drawerState.isOpen || (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER),
+        gesturesEnabled = drawerState.isOpen || (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER && currentTab != ScreenTab.BANGLA_OTT),
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = CinemaSurface,
@@ -303,6 +304,17 @@ fun MukulPlusApp() {
                         selected = currentTab == ScreenTab.LIVE_TV,
                         onClick = {
                             currentTab = ScreenTab.LIVE_TV
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Subscriptions, contentDescription = null, tint = if (currentTab == ScreenTab.BANGLA_OTT) BrandRed else TextSecondary) },
+                        label = { Text("বাংলা ওটিটি (Bangla OTT)") },
+                        selected = currentTab == ScreenTab.BANGLA_OTT,
+                        onClick = {
+                            currentTab = ScreenTab.BANGLA_OTT
                             coroutineScope.launch { drawerState.close() }
                         },
                         colors = drawerItemColors()
@@ -444,7 +456,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER) {
+                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER && currentTab != ScreenTab.BANGLA_OTT) {
                     Surface(
                         color = CinemaSurface,
                         tonalElevation = 3.dp,
@@ -520,6 +532,7 @@ fun MukulPlusApp() {
                                 ScreenTab.HOME,
                                 ScreenTab.MOVIES,
                                 ScreenTab.LIVE_TV,
+                                ScreenTab.BANGLA_OTT,
                                 ScreenTab.MUSIC,
                                 ScreenTab.YOUTUBE,
                                 ScreenTab.WEATHER,
@@ -531,18 +544,18 @@ fun MukulPlusApp() {
                                     .fillMaxWidth()
                                     .navigationBarsPadding()
                                     .height(54.dp)
-                                    .padding(horizontal = 2.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceEvenly
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
                                 bottomBarTabs.forEach { tab ->
                                     val isSelected = currentTab == tab
                                     Column(
                                         modifier = Modifier
-                                            .weight(1f)
+                                            .widthIn(min = 52.dp)
                                             .clip(RoundedCornerShape(10.dp))
                                             .clickable { currentTab = tab }
-                                            .padding(vertical = 4.dp),
+                                            .padding(horizontal = 6.dp, vertical = 4.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
@@ -603,7 +616,14 @@ fun MukulPlusApp() {
                             onNavigateToLiveTv = { currentTab = ScreenTab.LIVE_TV },
                             onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR },
                             onNavigateToMusic = { currentTab = ScreenTab.MUSIC },
-                            onNavigateToWeather = { currentTab = ScreenTab.WEATHER }
+                            onNavigateToWeather = { currentTab = ScreenTab.WEATHER },
+                            onNavigateToBanglaOtt = { currentTab = ScreenTab.BANGLA_OTT }
+                        )
+                    }
+                    ScreenTab.BANGLA_OTT -> {
+                        BanglaOttScreen(
+                            onBack = { currentTab = ScreenTab.HOME },
+                            onNavigateToDownloads = { currentTab = ScreenTab.EXTRACTOR }
                         )
                     }
                     ScreenTab.MOVIES -> {

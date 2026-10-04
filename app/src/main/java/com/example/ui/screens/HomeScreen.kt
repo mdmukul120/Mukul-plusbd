@@ -46,6 +46,7 @@ fun HomeScreen(
     onNavigateToExtractor: () -> Unit,
     onNavigateToMusic: () -> Unit = {},
     onNavigateToWeather: () -> Unit = {},
+    onNavigateToBanglaOtt: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -307,7 +308,103 @@ fun HomeScreen(
         }
 
         // ----------------------------------------------------
-        // BONGO BD EXCLUSIVES & DRAMAS (বঙ্গ ওরিজিনালস ও নাটক)
+        // BANGLA OTT PLATFORMS BANNER (চরকি, হইচই, বঙ্গ, নেটফ্লিক্স)
+        // ----------------------------------------------------
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed.copy(alpha = 0.35f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                    .clickable { onNavigateToBanglaOtt() }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(
+                                    Color(0xFF8B0000).copy(alpha = 0.45f),
+                                    Color(0xFFE50914).copy(alpha = 0.2f),
+                                    CinemaSurface
+                                )
+                            )
+                        )
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = BrandRed.copy(alpha = 0.2f),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Subscriptions,
+                                    contentDescription = null,
+                                    tint = BrandRedLight,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "বাংলা ওটিটি প্ল্যাটফর্ম",
+                                    color = TextPrimary,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = BrandRed
+                                ) {
+                                    Text(
+                                        text = "NEW",
+                                        color = Color.White,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                            Text(
+                                text = "Chorki, Hoichoi, Bongo, Toffee ও নেটফ্লিক্স মুভিজ",
+                                color = TextMuted,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+
+                    FilledTonalButton(
+                        onClick = onNavigateToBanglaOtt,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = BrandRed,
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text("দেখুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(Icons.Default.ArrowForwardIos, contentDescription = null, modifier = Modifier.size(10.dp))
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(14.dp))
+        }
         // ----------------------------------------------------
         if (bongoVideos.isNotEmpty()) {
             item {
