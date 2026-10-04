@@ -33,19 +33,96 @@ class MusicRepository(private val context: Context) {
         MusicCategory("kishore", "কিশোর কুমার", "Kishore Kumar", "Kishore Kumar")
     )
 
-    private val _featuredPlaylist = MutableStateFlow<MusicPlaylist?>(null)
+    private val defaultTrendingSongs = listOf(
+        MusicTrack(
+            id = "kesariya_default",
+            name = "Kesariya (কেসরিয়া)",
+            albumName = "Brahmastra",
+            artistNames = "Arijit Singh, Pritam",
+            duration = 268,
+            imageUrl = "https://c.saavncdn.com/191/Kesariya-From-Brahmastra-Hindi-2022-20220717092820-500x500.jpg",
+            streamUrl = "https://aac.saavncdn.com/191/69e8f6e80b2a752da3f6cf6310243e86_320.mp4",
+            downloadUrl = "https://aac.saavncdn.com/191/69e8f6e80b2a752da3f6cf6310243e86_320.mp4",
+            language = "Hindi",
+            year = "2022"
+        ),
+        MusicTrack(
+            id = "tum_hi_ho_default",
+            name = "Tum Hi Ho (তুম হি হো)",
+            albumName = "Aashiqui 2",
+            artistNames = "Arijit Singh, Mithoon",
+            duration = 262,
+            imageUrl = "https://c.saavncdn.com/264/Aashiqui-2-Hindi-2013-500x500.jpg",
+            streamUrl = "https://aac.saavncdn.com/264/8807d4b47636e05adfe786d70ffcbdf7_320.mp4",
+            downloadUrl = "https://aac.saavncdn.com/264/8807d4b47636e05adfe786d70ffcbdf7_320.mp4",
+            language = "Hindi",
+            year = "2013"
+        ),
+        MusicTrack(
+            id = "bindu_hits_default",
+            name = "Chura Ke Dil Mera (বিন্দু ও বলিউড ক্লাসিক)",
+            albumName = "Main Khiladi Tu Anari",
+            artistNames = "Kumar Sanu, Alka Yagnik",
+            duration = 472,
+            imageUrl = "https://c.saavncdn.com/712/Main-Khiladi-Tu-Anari-Hindi-1994-500x500.jpg",
+            streamUrl = "https://aac.saavncdn.com/712/e6628b0f94da943adabfe4122d256db0_320.mp4",
+            downloadUrl = "https://aac.saavncdn.com/712/e6628b0f94da943adabfe4122d256db0_320.mp4",
+            language = "Hindi",
+            year = "1994"
+        ),
+        MusicTrack(
+            id = "chaleya_default",
+            name = "Chaleya (চলেয়া)",
+            albumName = "Jawan",
+            artistNames = "Arijit Singh, Shilpa Rao, Anirudh",
+            duration = 200,
+            imageUrl = "https://c.saavncdn.com/026/Chaleya-From-Jawan-Hindi-2023-20230814014339-500x500.jpg",
+            streamUrl = "https://aac.saavncdn.com/026/6684aa5ba4d67319fa308e268a98b48f_320.mp4",
+            downloadUrl = "https://aac.saavncdn.com/026/6684aa5ba4d67319fa308e268a98b48f_320.mp4",
+            language = "Hindi",
+            year = "2023"
+        ),
+        MusicTrack(
+            id = "bangla_hit_default",
+            name = "Tumi Robe Nirobe (তুমি রবে নীরবে)",
+            albumName = "Rabindra Sangeet Melodies",
+            artistNames = "Sahana Bajpaie",
+            duration = 240,
+            imageUrl = "https://c.saavncdn.com/152/Rabindra-Sangeet-Bengali-2016-500x500.jpg",
+            streamUrl = "https://aac.saavncdn.com/152/491b9ee5ca36780775ffb96919eb6022_320.mp4",
+            downloadUrl = "https://aac.saavncdn.com/152/491b9ee5ca36780775ffb96919eb6022_320.mp4",
+            language = "Bengali",
+            year = "2016"
+        )
+    )
+
+    private val defaultFeaturedPlaylist = MusicPlaylist(
+        id = "featured_2026",
+        name = "🔥 নতুন সুপারহিট গান ও ৯০s গোল্ডেন",
+        description = "Latest Bollywood, Arijit Singh & Bindu Classics",
+        imageUrl = "https://c.saavncdn.com/191/Kesariya-From-Brahmastra-Hindi-2022-20220717092820-500x500.jpg",
+        songCount = 50
+    )
+
+    private val _featuredPlaylist = MutableStateFlow<MusicPlaylist?>(defaultFeaturedPlaylist)
     val featuredPlaylist: StateFlow<MusicPlaylist?> = _featuredPlaylist.asStateFlow()
 
-    private val _featuredSongs = MutableStateFlow<List<MusicTrack>>(emptyList())
+    private val _featuredSongs = MutableStateFlow<List<MusicTrack>>(defaultTrendingSongs)
     val featuredSongs: StateFlow<List<MusicTrack>> = _featuredSongs.asStateFlow()
 
-    private val _topPlaylists = MutableStateFlow<List<MusicPlaylist>>(emptyList())
+    private val _topPlaylists = MutableStateFlow<List<MusicPlaylist>>(
+        listOf(
+            MusicPlaylist("1167751266", "হিন্দি ৯০s গোল্ডেন হিট্স", "Best of 1990s Bollywood", "https://c.saavncdn.com/712/Main-Khiladi-Tu-Anari-Hindi-1994-500x500.jpg", 50),
+            MusicPlaylist("top_hindi_2026", "বলিউড টপ হিট্স ২০২৬", "Current Trending Songs", "https://c.saavncdn.com/026/Chaleya-From-Jawan-Hindi-2023-20230814014339-500x500.jpg", 40),
+            MusicPlaylist("bangla_hits_pl", "বাংলা সুপারহিট প্লেলিস্ট", "Best Bangla Hits", "https://c.saavncdn.com/152/Rabindra-Sangeet-Bengali-2016-500x500.jpg", 30)
+        )
+    )
     val topPlaylists: StateFlow<List<MusicPlaylist>> = _topPlaylists.asStateFlow()
 
     private val _popularAlbums = MutableStateFlow<List<MusicAlbum>>(emptyList())
     val popularAlbums: StateFlow<List<MusicAlbum>> = _popularAlbums.asStateFlow()
 
-    private val _trendingSongs = MutableStateFlow<List<MusicTrack>>(emptyList())
+    private val _trendingSongs = MutableStateFlow<List<MusicTrack>>(defaultTrendingSongs)
     val trendingSongs: StateFlow<List<MusicTrack>> = _trendingSongs.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)

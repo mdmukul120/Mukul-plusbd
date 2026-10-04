@@ -54,6 +54,16 @@ import com.example.ui.theme.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
+
+enum class YouTubeCardLayout {
+    TILE, GRID, LIST
+}
+
 private data class YouTubeCategory(
     val id: String,
     val title: String,
@@ -68,6 +78,18 @@ fun YouTubeScreen(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+    val prefs = remember { context.getSharedPreferences("mukul_prefs", android.content.Context.MODE_PRIVATE) }
+
+    // Card Layout Selection: Tile, Grid, List (saved automatically locally)
+    var cardLayoutMode by remember {
+        val saved = prefs.getString("yt_card_layout", "TILE") ?: "TILE"
+        mutableStateOf(try { YouTubeCardLayout.valueOf(saved) } catch (_: Exception) { YouTubeCardLayout.TILE })
+    }
+
+    fun updateCardLayout(mode: YouTubeCardLayout) {
+        cardLayoutMode = mode
+        prefs.edit().putString("yt_card_layout", mode.name).apply()
+    }
 
     // Screen State with in-memory caching to save user data
     var searchQuery by remember { mutableStateOf(com.example.data.api.YouTubeFeedCache.cachedQuery) }
@@ -81,25 +103,43 @@ fun YouTubeScreen(
     var relatedVideos by remember { mutableStateOf<List<YouTubeVideoItem>>(emptyList()) }
     var isLoadingRelated by remember { mutableStateOf(false) }
 
-    // Download & Resolution Dialog State
-    var targetDownloadVideo by remember { mutableStateOf<YouTubeVideoItem?>(null) }
+    // Download state variables
     var showResolutionDialog by remember { mutableStateOf(false) }
+    var targetDownloadVideo by remember { mutableStateOf<YouTubeVideoItem?>(null) }
+    var extractionResult by remember { mutableStateOf<com.example.data.download.ExtractionResult?>(null) }
     var isExtracting by remember { mutableStateOf(false) }
     var extractionStatus by remember { mutableStateOf("") }
     var extractionJob by remember { mutableStateOf<Job?>(null) }
-    var extractionResult by remember { mutableStateOf<ExtractionResult?>(null) }
 
-    // Categories
+    // Background playback & state tracking
+    LaunchedEffect(activeVideo) {
+        VideoPlayerState.isPlaying = (activeVideo != null)
+    }
+
+    // Restore orientation when leaving YouTube player
+    DisposableEffect(Unit) {
+        onDispose {
+            VideoPlayerState.isPlaying = false
+            VideoPlayerState.isFullScreen = false
+            context.findActivity()?.let { act ->
+                try {
+                    act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // Categories without emojis (Clean titles + vector icons)
     val categories = remember {
         listOf(
-            YouTubeCategory("", "🔥 ট্রেন্ডিং (Trending)", Icons.Default.TrendingUp),
-            YouTubeCategory("bangla_song", "🎵 বাংলা গান", Icons.Default.MusicNote),
-            YouTubeCategory("natok", "🎭 নাটক (Natok)", Icons.Default.LiveTv),
-            YouTubeCategory("movie_trailer", "🎬 ট্রেইলার", Icons.Default.Movie),
-            YouTubeCategory("hindi_song", "🎶 হিন্দি গান", Icons.Default.Headphones),
-            YouTubeCategory("islamic", "🌙 ইসলামিক", Icons.Default.WbTwilight),
-            YouTubeCategory("news", "📰 সংবাদ (News)", Icons.Default.Newspaper),
-            YouTubeCategory("gaming", "🎮 গেমিং", Icons.Default.SportsEsports)
+            YouTubeCategory("", "ট্রেন্ডিং", Icons.Default.TrendingUp),
+            YouTubeCategory("bangla_song", "বাংলা গান", Icons.Default.MusicNote),
+            YouTubeCategory("natok", "নাটক", Icons.Default.LiveTv),
+            YouTubeCategory("movie_trailer", "মুভি ট্রেইলার", Icons.Default.Movie),
+            YouTubeCategory("hindi_song", "হিন্দি গান", Icons.Default.Headphones),
+            YouTubeCategory("islamic", "ইসলামিক", Icons.Default.WbTwilight),
+            YouTubeCategory("news", "সংবাদ", Icons.Default.Newspaper),
+            YouTubeCategory("gaming", "গেমিং", Icons.Default.SportsEsports)
         )
     }
 
@@ -588,31 +628,27 @@ fun YouTubeScreen(
 
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            // Action Buttons Row (Download, Share, Downloads Page)
+                            // Action Buttons Row (Fullscreen Play, Share)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Button(
-                                    onClick = {
-                                        targetDownloadVideo = currentVideo
-                                        showResolutionDialog = true
-                                        extractionResult = null
-                                    },
+                                    onClick = { isYouTubeFullScreen = true },
                                     colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.weight(1.3f).height(42.dp),
                                     contentPadding = PaddingValues(horizontal = 12.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.CloudDownload,
-                                        contentDescription = "Download",
+                                        imageVector = Icons.Default.Fullscreen,
+                                        contentDescription = "Fullscreen",
                                         tint = Color.White,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(20.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "ডাউনলোড",
+                                        text = "ফুলস্ক্রিন প্লে",
                                         color = Color.White,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold
@@ -620,7 +656,14 @@ fun YouTubeScreen(
                                 }
 
                                 OutlinedButton(
-                                    onClick = onNavigateToDownloads,
+                                    onClick = {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(Intent.EXTRA_SUBJECT, currentVideo.title)
+                                            putExtra(Intent.EXTRA_TEXT, "Watch on YouTube: ${currentVideo.watchUrl}")
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "শেয়ার করুন"))
+                                    },
                                     shape = RoundedCornerShape(12.dp),
                                     border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextPrimary),
@@ -628,14 +671,14 @@ fun YouTubeScreen(
                                     contentPadding = PaddingValues(horizontal = 8.dp)
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Default.Folder,
+                                        imageVector = Icons.Default.Share,
                                         contentDescription = null,
                                         tint = CyanAccent,
                                         modifier = Modifier.size(17.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "ডাউনলোডস",
+                                        text = "শেয়ার",
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -794,12 +837,12 @@ fun YouTubeScreen(
                                 }
                             }
 
-                            // Slim Responsive Search Box
+                            // Slim Responsive Search Box with full keyboard support (BasicTextField)
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
                                 color = CinemaBackground,
                                 border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                                modifier = Modifier.weight(1f).height(36.dp)
+                                modifier = Modifier.weight(1f).height(38.dp)
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
@@ -809,20 +852,19 @@ fun YouTubeScreen(
                                         imageVector = Icons.Default.Search,
                                         contentDescription = "Search",
                                         tint = BrandRed,
-                                        modifier = Modifier.size(17.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    TextField(
+                                    BasicTextField(
                                         value = searchQuery,
                                         onValueChange = { searchQuery = it },
-                                        placeholder = {
-                                            Text(
-                                                "ইউটিউব খুঁজুন...",
-                                                color = TextMuted,
-                                                fontSize = 11.5.sp
-                                            )
-                                        },
                                         singleLine = true,
+                                        textStyle = androidx.compose.ui.text.TextStyle(
+                                            color = TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Normal
+                                        ),
+                                        cursorBrush = SolidColor(BrandRed),
                                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                         keyboardActions = KeyboardActions(
                                             onSearch = {
@@ -831,16 +873,17 @@ fun YouTubeScreen(
                                                 }
                                             }
                                         ),
-                                        colors = TextFieldDefaults.colors(
-                                            focusedContainerColor = Color.Transparent,
-                                            unfocusedContainerColor = Color.Transparent,
-                                            focusedIndicatorColor = Color.Transparent,
-                                            unfocusedIndicatorColor = Color.Transparent,
-                                            focusedTextColor = TextPrimary,
-                                            unfocusedTextColor = TextPrimary,
-                                            cursorColor = BrandRed
-                                        ),
-                                        modifier = Modifier.weight(1f)
+                                        modifier = Modifier.weight(1f),
+                                        decorationBox = { innerTextField ->
+                                            if (searchQuery.isEmpty()) {
+                                                Text(
+                                                    "ইউটিউব খুঁজুন...",
+                                                    color = TextMuted,
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                            innerTextField()
+                                        }
                                     )
                                     if (searchQuery.isNotEmpty()) {
                                         IconButton(
@@ -854,27 +897,58 @@ fun YouTubeScreen(
                                                 imageVector = Icons.Default.Clear,
                                                 contentDescription = "Clear",
                                                 tint = TextMuted,
-                                                modifier = Modifier.size(15.dp)
+                                                modifier = Modifier.size(14.dp)
                                             )
                                         }
                                     }
                                 }
                             }
 
-                            Button(
-                                onClick = {
-                                    if (searchQuery.isNotBlank()) {
-                                        loadFeed(query = searchQuery)
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                                shape = RoundedCornerShape(14.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp),
+                            // Card Layout Switcher: Tile (টাইল), Grid (গ্রিড), List (লিস্ট)
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = CinemaSurfaceVariant,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
                                 modifier = Modifier.height(38.dp)
                             ) {
-                                Icon(Icons.Default.Search, contentDescription = "সার্চ", modifier = Modifier.size(15.dp))
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text("সার্চ", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                ) {
+                                    IconButton(
+                                        onClick = { updateCardLayout(YouTubeCardLayout.TILE) },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ViewAgenda,
+                                            contentDescription = "টাইল মোড",
+                                            tint = if (cardLayoutMode == YouTubeCardLayout.TILE) BrandRed else TextMuted,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { updateCardLayout(YouTubeCardLayout.GRID) },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.GridView,
+                                            contentDescription = "গ্রিড মোড",
+                                            tint = if (cardLayoutMode == YouTubeCardLayout.GRID) BrandRed else TextMuted,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                    }
+                                    IconButton(
+                                        onClick = { updateCardLayout(YouTubeCardLayout.LIST) },
+                                        modifier = Modifier.size(30.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.ViewList,
+                                            contentDescription = "লিস্ট মোড",
+                                            tint = if (cardLayoutMode == YouTubeCardLayout.LIST) BrandRed else TextMuted,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                    }
+                                }
                             }
 
                             // Refresh Feed Button
@@ -883,19 +957,6 @@ fun YouTubeScreen(
                                 modifier = Modifier.size(32.dp)
                             ) {
                                 Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = TextSecondary, modifier = Modifier.size(18.dp))
-                            }
-
-                            // Downloads Folder Button
-                            IconButton(
-                                onClick = onNavigateToDownloads,
-                                modifier = Modifier.size(32.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.CloudDownload,
-                                    contentDescription = "Downloads",
-                                    tint = CyanAccent,
-                                    modifier = Modifier.size(20.dp)
-                                )
                             }
                         }
 
@@ -1001,55 +1062,78 @@ fun YouTubeScreen(
                         }
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)
-                    ) {
-                        items(videoList) { video ->
-                            YouTubeVideoCard(
-                                video = video,
-                                onPlayClick = { openVideo(video) },
-                                onDownloadClick = {
-                                    targetDownloadVideo = video
-                                    showResolutionDialog = true
-                                    extractionResult = null
-                                }
-                            )
-                        }
-
-                        // Bottom Load More Button (নিচে লোড বাটন থাকবে)
-                        item {
-                            Box(
+                    when (cardLayoutMode) {
+                        YouTubeCardLayout.TILE -> {
+                            LazyColumn(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 14.dp, vertical = 10.dp),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxSize()
+                                    .weight(1f),
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Button(
-                                    onClick = { loadMore() },
-                                    enabled = !isLoadingMore,
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(46.dp)
-                                ) {
-                                    if (isLoadingMore) {
-                                        CircularProgressIndicator(
-                                            color = Color.White,
-                                            strokeWidth = 2.dp,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("ভিডিও লোড হচ্ছে...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                                    } else {
-                                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("আরও লোড করুন (Load More)", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                items(videoList, key = { it.id }) { video ->
+                                    YouTubeVideoTileCard(
+                                        video = video,
+                                        onPlayClick = { openVideo(video) },
+                                        onDownloadClick = {
+                                            targetDownloadVideo = video
+                                            showResolutionDialog = true
+                                            extractionResult = null
+                                        }
+                                    )
+                                }
+                                item {
+                                    LoadMoreButton(isLoadingMore = isLoadingMore, onClick = { loadMore() })
+                                }
+                            }
+                        }
+                        YouTubeCardLayout.GRID -> {
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .weight(1f),
+                                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 120.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                items(videoList, key = { it.id }) { video ->
+                                    YouTubeVideoGridCard(
+                                        video = video,
+                                        onPlayClick = { openVideo(video) },
+                                        onDownloadClick = {
+                                            targetDownloadVideo = video
+                                            showResolutionDialog = true
+                                            extractionResult = null
+                                        }
+                                    )
+                                }
+                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                                    LoadMoreButton(isLoadingMore = isLoadingMore, onClick = { loadMore() })
+                                }
+                            }
+                        }
+                        YouTubeCardLayout.LIST -> {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .weight(1f),
+                                contentPadding = PaddingValues(top = 8.dp, bottom = 120.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                items(videoList, key = { it.id }) { video ->
+                                    YouTubeVideoCard(
+                                        video = video,
+                                        onPlayClick = { openVideo(video) },
+                                        onDownloadClick = {
+                                            targetDownloadVideo = video
+                                            showResolutionDialog = true
+                                            extractionResult = null
+                                        }
+                                    )
+                                }
+                                item {
+                                    LoadMoreButton(isLoadingMore = isLoadingMore, onClick = { loadMore() })
                                 }
                             }
                         }
@@ -1208,11 +1292,12 @@ fun YouTubeScreen(
 
                                 Button(
                                     onClick = {
+                                        val vId = res.videoId.ifBlank { videoToDownload.id }
                                         val taskId = InAppDownloader.startDownload(
                                             context = context,
-                                            movieSlug = "yt_${res.videoId}",
+                                            movieSlug = "yt_$vId",
                                             title = videoToDownload.title,
-                                            poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
+                                            poster = if (res.thumbnail.isNotBlank()) res.thumbnail else videoToDownload.thumbnailUrl,
                                             quality = res.format,
                                             downloadUrl = res.downloadUrl
                                         )
@@ -1257,11 +1342,12 @@ fun YouTubeScreen(
                                                 if (extractResult.isSuccess) {
                                                     val res = extractResult.getOrNull()
                                                     if (res != null && res.downloadUrl.isNotEmpty()) {
+                                                        val vId = res.videoId.ifBlank { videoToDownload.id }
                                                         InAppDownloader.startDownload(
                                                             context = context,
-                                                            movieSlug = "yt_${res.videoId}",
+                                                            movieSlug = "yt_$vId",
                                                             title = videoToDownload.title,
-                                                            poster = res.thumbnail.ifEmpty { videoToDownload.thumbnailUrl },
+                                                            poster = if (res.thumbnail.isNotBlank()) res.thumbnail else videoToDownload.thumbnailUrl,
                                                             quality = res.format,
                                                             downloadUrl = res.downloadUrl
                                                         )
@@ -1520,6 +1606,331 @@ private fun YouTubeVideoCard(
                         Text("ডাউনলোড", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * YouTube Video Tile Card (ওয়াইড টাইল কার্ড মোড)
+ */
+@Composable
+private fun YouTubeVideoTileCard(
+    video: YouTubeVideoItem,
+    onPlayClick: () -> Unit,
+    onDownloadClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 3.dp)
+            .clickable(onClick = onPlayClick)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // 16:9 Wide Thumbnail
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .background(CinemaSurfaceVariant)
+            ) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // HD Badge at Top-Left
+                Surface(
+                    color = BrandRed.copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(bottomEnd = 6.dp),
+                    modifier = Modifier.align(Alignment.TopStart)
+                ) {
+                    Text(
+                        text = "HD",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                // Center Play Icon Overlay
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .size(42.dp)
+                        .align(Alignment.Center)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = "Play",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+
+                // Duration Badge (Bottom-Right)
+                if (video.duration.isNotEmpty()) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(6.dp)
+                    ) {
+                        Text(
+                            text = video.duration,
+                            color = Color.White,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            // Info & Action Buttons
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp)
+            ) {
+                Text(
+                    text = video.title,
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 17.sp
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            Icons.Default.AccountCircle,
+                            contentDescription = null,
+                            tint = TextMuted,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = video.channelTitle,
+                            color = TextSecondary,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (video.viewCount.isNotEmpty()) {
+                            Text(
+                                text = " • ${video.viewCount}",
+                                color = TextMuted,
+                                fontSize = 10.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    // Action buttons
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalButton(
+                            onClick = onPlayClick,
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = CinemaSurfaceVariant,
+                                contentColor = TextPrimary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
+                            modifier = Modifier.height(26.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("প্লে", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        Button(
+                            onClick = onDownloadClick,
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
+                            modifier = Modifier.height(26.dp)
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(12.dp))
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Text("ডাউনলোড", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * YouTube Video Grid Card (২-কলাম গ্রিড কার্ড মোড)
+ */
+@Composable
+private fun YouTubeVideoGridCard(
+    video: YouTubeVideoItem,
+    onPlayClick: () -> Unit,
+    onDownloadClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPlayClick)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // 16:9 Thumbnail
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .background(CinemaSurfaceVariant)
+            ) {
+                AsyncImage(
+                    model = video.thumbnailUrl,
+                    contentDescription = video.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Duration Badge
+                if (video.duration.isNotEmpty()) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(3.dp),
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                    ) {
+                        Text(
+                            text = video.duration,
+                            color = Color.White,
+                            fontSize = 8.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
+
+            Column(modifier = Modifier.padding(7.dp)) {
+                Text(
+                    text = video.title,
+                    color = TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 14.sp
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = video.channelTitle,
+                    color = TextSecondary,
+                    fontSize = 9.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(
+                        onClick = onPlayClick,
+                        shape = RoundedCornerShape(5.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = CinemaSurfaceVariant,
+                            contentColor = TextPrimary
+                        ),
+                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                        modifier = Modifier.height(23.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(10.dp))
+                        Spacer(modifier = Modifier.width(1.dp))
+                        Text("প্লে", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = onDownloadClick,
+                        shape = RoundedCornerShape(5.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
+                        modifier = Modifier.height(23.dp)
+                    ) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(10.dp))
+                        Spacer(modifier = Modifier.width(1.dp))
+                        Text("ডাউনলোড", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Reusable Load More Button
+ */
+@Composable
+private fun LoadMoreButton(
+    isLoadingMore: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Button(
+            onClick = onClick,
+            enabled = !isLoadingMore,
+            colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+        ) {
+            if (isLoadingMore) {
+                CircularProgressIndicator(
+                    color = Color.White,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("ভিডিও লোড হচ্ছে...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            } else {
+                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("আরও লোড করুন (Load More)", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

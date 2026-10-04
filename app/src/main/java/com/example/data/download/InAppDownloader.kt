@@ -213,13 +213,18 @@ object InAppDownloader {
     fun downloadMusicTrack(context: Context, track: com.example.data.model.MusicTrack): String {
         val dlUrl = if (track.downloadUrl.isNotEmpty()) track.downloadUrl else track.streamUrl
         val slug = "music_${if (track.id.isNotEmpty()) track.id else System.currentTimeMillis().toString()}"
-        val trackName = if (track.name.isNotEmpty()) track.name else "গান"
+        val cleanName = track.name.ifBlank { "গান" }
+        val displayTitle = if (track.artistNames.isNotBlank() && !cleanName.contains(track.artistNames)) {
+            "$cleanName - ${track.artistNames}"
+        } else {
+            cleanName
+        }
         return startDownload(
             context = context,
             movieSlug = slug,
-            title = trackName,
+            title = displayTitle,
             poster = track.imageUrl,
-            quality = "MP3",
+            quality = "320kbps MP3",
             downloadUrl = dlUrl
         )
     }

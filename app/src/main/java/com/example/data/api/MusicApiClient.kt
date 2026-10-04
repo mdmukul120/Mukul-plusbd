@@ -126,21 +126,35 @@ object MusicApiClient {
         }
     }
 
+    private fun cleanHtml(text: String): String {
+        return text
+            .replace("&quot;", "\"")
+            .replace("&#039;", "'")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&apos;", "'")
+            .replace("&#39;", "'")
+            .trim()
+    }
+
     fun parseSongJson(json: JSONObject): MusicTrack {
         val id = json.optString("id")
-        val name = json.optString("name", json.optString("title"))
+        val rawName = json.optString("name", json.optString("title"))
+        val name = cleanHtml(rawName)
         val duration = json.optInt("duration", 0)
         val language = json.optString("language", "")
         val year = json.optString("year", "")
 
         val albumObj = json.opt("album")
-        val albumName = when (albumObj) {
+        val rawAlbumName = when (albumObj) {
             is JSONObject -> albumObj.optString("name", albumObj.optString("title"))
             is String -> albumObj
             else -> ""
         }
+        val albumName = cleanHtml(rawAlbumName)
 
-        val artistsStr = extractArtistNames(json.opt("artists"))
+        val artistsStr = cleanHtml(extractArtistNames(json.opt("artists")))
         val imageUrl = extractImageUrl(json.opt("image"))
         val (streamUrl, downloadUrl) = extractStreamAndDownloadUrls(json.opt("downloadUrl"))
 
@@ -148,7 +162,7 @@ object MusicApiClient {
             id = id,
             name = name,
             albumName = albumName,
-            artistNames = if (artistsStr.isNotEmpty()) artistsStr else json.optString("subtitle", ""),
+            artistNames = if (artistsStr.isNotEmpty()) artistsStr else cleanHtml(json.optString("subtitle", "")),
             duration = duration,
             imageUrl = imageUrl,
             streamUrl = streamUrl,

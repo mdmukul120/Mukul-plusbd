@@ -47,9 +47,17 @@ import com.example.data.util.LocalAudioItem
 import com.example.data.util.LocalMediaManager
 import com.example.data.util.LocalVideoItem
 import com.example.ui.components.VideoPlayerView
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
 import java.io.File
+
+enum class ExtractorCardLayout {
+    TILE, GRID, LIST
+}
 
 private enum class LarkTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector) {
     VIDEOS("ভিডিও", Icons.Default.VideoLibrary),
@@ -157,6 +165,53 @@ fun ExtractorScreen(
     val activeTasks = remember(allTasks) {
         allTasks.values.filter {
             it.status == DownloadStatus.DOWNLOADING || it.status == DownloadStatus.QUEUED
+        }
+    }
+
+    val prefs = remember { context.getSharedPreferences("mukul_prefs", Context.MODE_PRIVATE) }
+    var cardLayoutMode by remember {
+        val saved = prefs.getString("extractor_card_layout", "LIST") ?: "LIST"
+        mutableStateOf(try { ExtractorCardLayout.valueOf(saved) } catch (_: Exception) { ExtractorCardLayout.LIST })
+    }
+
+    fun updateCardLayout(mode: ExtractorCardLayout) {
+        cardLayoutMode = mode
+        prefs.edit().putString("extractor_card_layout", mode.name).apply()
+    }
+
+    // Playback helper handling audio vs video downloaded tasks
+    fun playCompletedTask(task: DownloadTask) {
+        val file = File(task.filePath)
+        val path = if (file.exists() && file.length() > 0) task.filePath else {
+            val fallback = File(InAppDownloader.getDownloadDirectory(context), task.id)
+            if (fallback.exists() && fallback.length() > 0) fallback.absolutePath else null
+        }
+
+        if (path != null) {
+            val isAudio = task.movieSlug.startsWith("music_") ||
+                    task.quality.contains("mp3", ignoreCase = true) ||
+                    path.endsWith(".mp3", ignoreCase = true) ||
+                    path.endsWith(".m4a", ignoreCase = true)
+
+            if (isAudio) {
+                val track = MusicTrack(
+                    id = task.id,
+                    name = task.title,
+                    artistNames = "অফলাইন ডাউনলোড",
+                    albumName = "ইন-অ্যাপ মিডিয়া",
+                    duration = 0,
+                    imageUrl = task.poster,
+                    streamUrl = path,
+                    downloadUrl = path
+                )
+                MusicPlayerManager.playTrack(track, listOf(track))
+                Toast.makeText(context, "গান বাজানো হচ্ছে: ${task.title}", Toast.LENGTH_SHORT).show()
+            } else {
+                activePlayFilePath = path
+                activePlayTitle = task.title
+            }
+        } else {
+            Toast.makeText(context, "ফাইলটি খুঁজে পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -394,6 +449,55 @@ fun ExtractorScreen(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Card Layout Switcher: Tile, Grid, List
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = CinemaSurfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            ) {
+                                IconButton(
+                                    onClick = { updateCardLayout(ExtractorCardLayout.TILE) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ViewAgenda,
+                                        contentDescription = "টাইল মোড",
+                                        tint = if (cardLayoutMode == ExtractorCardLayout.TILE) BrandRed else TextMuted,
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { updateCardLayout(ExtractorCardLayout.GRID) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.GridView,
+                                        contentDescription = "গ্রিড মোড",
+                                        tint = if (cardLayoutMode == ExtractorCardLayout.GRID) BrandRed else TextMuted,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { updateCardLayout(ExtractorCardLayout.LIST) },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ViewList,
+                                        contentDescription = "লিস্ট মোড",
+                                        tint = if (cardLayoutMode == ExtractorCardLayout.LIST) BrandRed else TextMuted,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
                         // Refresh Button
                         IconButton(
                             onClick = { refreshMedia() },
@@ -683,21 +787,70 @@ fun ExtractorScreen(
                                 )
                             }
 
-                            items(filteredVideos, key = { it.id }) { video ->
-                                LarkVideoCard(
-                                    video = video,
-                                    onPlay = {
-                                        activePlayFilePath = video.filePath
-                                        activePlayTitle = video.title
-                                    },
-                                    onShare = {
-                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                            type = "video/*"
-                                            putExtra(Intent.EXTRA_STREAM, Uri.parse(video.contentUri))
-                                        }
-                                        context.startActivity(Intent.createChooser(shareIntent, "ভিডিও শেয়ার করুন"))
+                            when (cardLayoutMode) {
+                                ExtractorCardLayout.LIST -> {
+                                    items(filteredVideos, key = { it.id }) { video ->
+                                        LarkVideoCard(
+                                            video = video,
+                                            onPlay = {
+                                                activePlayFilePath = video.filePath
+                                                activePlayTitle = video.title
+                                            },
+                                            onShare = {
+                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "video/*"
+                                                    putExtra(Intent.EXTRA_STREAM, Uri.parse(video.contentUri))
+                                                }
+                                                context.startActivity(Intent.createChooser(shareIntent, "ভিডিও শেয়ার করুন"))
+                                            }
+                                        )
                                     }
-                                )
+                                }
+                                ExtractorCardLayout.TILE -> {
+                                    items(filteredVideos, key = { it.id }) { video ->
+                                        LarkVideoTileCard(
+                                            video = video,
+                                            onPlay = {
+                                                activePlayFilePath = video.filePath
+                                                activePlayTitle = video.title
+                                            },
+                                            onShare = {
+                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                    type = "video/*"
+                                                    putExtra(Intent.EXTRA_STREAM, Uri.parse(video.contentUri))
+                                                }
+                                                context.startActivity(Intent.createChooser(shareIntent, "ভিডিও শেয়ার করুন"))
+                                            }
+                                        )
+                                    }
+                                }
+                                ExtractorCardLayout.GRID -> {
+                                    item {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            filteredVideos.chunked(2).forEach { rowPair ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    for (video in rowPair) {
+                                                        Box(modifier = Modifier.weight(1f)) {
+                                                            LarkVideoGridCard(
+                                                                video = video,
+                                                                onPlay = {
+                                                                    activePlayFilePath = video.filePath
+                                                                    activePlayTitle = video.title
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                    if (rowPair.size == 1) {
+                                                        Spacer(modifier = Modifier.weight(1f))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -832,28 +985,59 @@ fun ExtractorScreen(
                                 )
                             }
                         } else {
-                            items(completedDownloads, key = { it.id }) { task ->
-                                LarkCompletedDownloadCard(
-                                    task = task,
-                                    onPlay = {
-                                        val file = File(task.filePath)
-                                        val path = if (file.exists() && file.length() > 0) task.filePath else {
-                                            val fallback = File(InAppDownloader.getDownloadDirectory(context), task.id)
-                                            if (fallback.exists() && fallback.length() > 0) fallback.absolutePath else null
-                                        }
-
-                                        if (path != null) {
-                                            activePlayFilePath = path
-                                            activePlayTitle = task.title
-                                        } else {
-                                            Toast.makeText(context, "ফাইলটি খুঁজে পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    onDelete = {
-                                        InAppDownloader.deleteDownloadedMovie(context, task.id)
-                                        Toast.makeText(context, "মুভি মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                            when (cardLayoutMode) {
+                                ExtractorCardLayout.LIST -> {
+                                    items(completedDownloads, key = { it.id }) { task ->
+                                        LarkCompletedDownloadCard(
+                                            task = task,
+                                            onPlay = { playCompletedTask(task) },
+                                            onDelete = {
+                                                InAppDownloader.deleteDownloadedMovie(context, task.id)
+                                                Toast.makeText(context, "মুভি মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
                                     }
-                                )
+                                }
+                                ExtractorCardLayout.TILE -> {
+                                    items(completedDownloads, key = { it.id }) { task ->
+                                        LarkCompletedDownloadTileCard(
+                                            task = task,
+                                            onPlay = { playCompletedTask(task) },
+                                            onDelete = {
+                                                InAppDownloader.deleteDownloadedMovie(context, task.id)
+                                                Toast.makeText(context, "মুভি মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                }
+                                ExtractorCardLayout.GRID -> {
+                                    item {
+                                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            completedDownloads.chunked(2).forEach { rowPair ->
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                ) {
+                                                    for (task in rowPair) {
+                                                        Box(modifier = Modifier.weight(1f)) {
+                                                            LarkCompletedDownloadGridCard(
+                                                                task = task,
+                                                                onPlay = { playCompletedTask(task) },
+                                                                onDelete = {
+                                                                    InAppDownloader.deleteDownloadedMovie(context, task.id)
+                                                                    Toast.makeText(context, "মুভি মুছে ফেলা হয়েছে", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                    if (rowPair.size == 1) {
+                                                        Spacer(modifier = Modifier.weight(1f))
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1240,6 +1424,7 @@ private fun LarkCompletedDownloadCard(
     onDelete: () -> Unit
 ) {
     val isYouTube = task.movieSlug.startsWith("yt_")
+    val isAudio = task.movieSlug.startsWith("music_") || task.quality.contains("mp3", ignoreCase = true)
     Surface(
         onClick = onPlay,
         color = CinemaSurface,
@@ -1251,25 +1436,63 @@ private fun LarkCompletedDownloadCard(
             modifier = Modifier.padding(10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (task.poster.isNotEmpty()) {
-                AsyncImage(
-                    model = task.poster,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(50.dp, 70.dp).clip(RoundedCornerShape(6.dp))
-                )
-                Spacer(modifier = Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(54.dp, 72.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(CinemaSurfaceVariant)
+            ) {
+                if (task.poster.isNotEmpty()) {
+                    AsyncImage(
+                        model = task.poster,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isAudio) Icons.Default.MusicNote else Icons.Default.VideoLibrary,
+                            contentDescription = null,
+                            tint = if (isAudio) GoldRating else BrandRed,
+                            modifier = Modifier.size(26.dp)
+                        )
+                    }
+                }
+                // Play overlay
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.45f),
+                    modifier = Modifier.size(24.dp).align(Alignment.Center)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                    }
+                }
             }
+            Spacer(modifier = Modifier.width(10.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(
-                        color = if (isYouTube) BrandRed.copy(alpha = 0.2f) else CyanAccent.copy(alpha = 0.2f),
+                        color = when {
+                            isAudio -> GoldRating.copy(alpha = 0.2f)
+                            isYouTube -> BrandRed.copy(alpha = 0.2f)
+                            else -> CyanAccent.copy(alpha = 0.2f)
+                        },
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            text = if (isYouTube) "ইউটিউব" else "ওটিটি মুভি",
-                            color = if (isYouTube) BrandRedLight else CyanAccent,
+                            text = when {
+                                isAudio -> "অডিও গান"
+                                isYouTube -> "ইউটিউব"
+                                else -> "ওটিটি মুভি"
+                            },
+                            color = when {
+                                isAudio -> GoldRating
+                                isYouTube -> BrandRedLight
+                                else -> CyanAccent
+                            },
                             fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
@@ -1318,6 +1541,401 @@ private fun LarkCompletedDownloadCard(
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete", tint = TextMuted, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+/**
+ * Completed Download Tile Card (TILE)
+ */
+@Composable
+private fun LarkCompletedDownloadTileCard(
+    task: DownloadTask,
+    onPlay: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val isYouTube = task.movieSlug.startsWith("yt_")
+    val isAudio = task.movieSlug.startsWith("music_") || task.quality.contains("mp3", ignoreCase = true)
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPlay)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .background(CinemaSurfaceVariant)
+            ) {
+                if (task.poster.isNotEmpty()) {
+                    AsyncImage(
+                        model = task.poster,
+                        contentDescription = task.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isAudio) Icons.Default.MusicNote else Icons.Default.VideoLibrary,
+                            contentDescription = null,
+                            tint = if (isAudio) GoldRating else BrandRed,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    }
+                }
+
+                Surface(
+                    color = if (isAudio) GoldRating else if (isYouTube) BrandRed else CyanAccent,
+                    shape = RoundedCornerShape(bottomEnd = 6.dp),
+                    modifier = Modifier.align(Alignment.TopStart)
+                ) {
+                    Text(
+                        text = if (isAudio) "MP3" else if (isYouTube) "ইউটিউব" else "ওটিটি",
+                        color = Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.5f),
+                    modifier = Modifier.size(42.dp).align(Alignment.Center)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
+                }
+
+                Surface(
+                    color = Color.Black.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                ) {
+                    Text(
+                        text = InAppDownloader.formatFileSize(task.totalBytes),
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                Text(
+                    text = task.title,
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "${task.quality} • অফলাইন প্লে প্রস্তুত",
+                        color = Color(0xFF10B981),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalButton(
+                            onClick = onPlay,
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = BrandRed, contentColor = Color.White),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("প্লে", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = TextMuted, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Completed Download Grid Card (GRID)
+ */
+@Composable
+private fun LarkCompletedDownloadGridCard(
+    task: DownloadTask,
+    onPlay: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val isYouTube = task.movieSlug.startsWith("yt_")
+    val isAudio = task.movieSlug.startsWith("music_") || task.quality.contains("mp3", ignoreCase = true)
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPlay)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 10f)
+                    .background(CinemaSurfaceVariant)
+            ) {
+                if (task.poster.isNotEmpty()) {
+                    AsyncImage(
+                        model = task.poster,
+                        contentDescription = task.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isAudio) Icons.Default.MusicNote else Icons.Default.VideoLibrary,
+                            contentDescription = null,
+                            tint = if (isAudio) GoldRating else BrandRed,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+                Surface(
+                    color = Color.Black.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(3.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                ) {
+                    Text(
+                        text = InAppDownloader.formatFileSize(task.totalBytes),
+                        color = Color.White,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+
+            Column(modifier = Modifier.padding(7.dp)) {
+                Text(
+                    text = task.title,
+                    color = TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = task.quality,
+                    color = CyanAccent,
+                    fontSize = 9.5.sp
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(
+                        onClick = onPlay,
+                        shape = RoundedCornerShape(5.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = BrandRed, contentColor = Color.White),
+                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                        modifier = Modifier.height(23.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(11.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("প্লে", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = TextMuted, modifier = Modifier.size(14.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Local Video Tile Card (TILE)
+ */
+@Composable
+private fun LarkVideoTileCard(
+    video: LocalVideoItem,
+    onPlay: () -> Unit,
+    onShare: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPlay)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .background(CinemaSurfaceVariant)
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(video.contentUri)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Surface(
+                    shape = CircleShape,
+                    color = Color.Black.copy(alpha = 0.5f),
+                    modifier = Modifier.size(42.dp).align(Alignment.Center)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
+                    }
+                }
+                Surface(
+                    color = Color.Black.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(4.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(6.dp)
+                ) {
+                    Text(
+                        text = video.durationFormatted,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                Text(
+                    text = video.title,
+                    color = TextPrimary,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "${video.sizeFormatted} • ${video.folderName}",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalButton(
+                            onClick = onPlay,
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = BrandRed, contentColor = Color.White),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("প্লে", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(6.dp))
+                        IconButton(onClick = onShare, modifier = Modifier.size(28.dp)) {
+                            Icon(Icons.Default.Share, contentDescription = "Share", tint = TextMuted, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Local Video Grid Card (GRID)
+ */
+@Composable
+private fun LarkVideoGridCard(
+    video: LocalVideoItem,
+    onPlay: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onPlay)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 10f)
+                    .background(CinemaSurfaceVariant)
+            ) {
+                AsyncImage(
+                    model = ImageRequest.Builder(LocalContext.current)
+                        .data(video.contentUri)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+                Surface(
+                    color = Color.Black.copy(alpha = 0.85f),
+                    shape = RoundedCornerShape(3.dp),
+                    modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                ) {
+                    Text(
+                        text = video.durationFormatted,
+                        color = Color.White,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+            Column(modifier = Modifier.padding(7.dp)) {
+                Text(
+                    text = video.title,
+                    color = TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = video.sizeFormatted,
+                    color = TextMuted,
+                    fontSize = 9.5.sp
+                )
             }
         }
     }
