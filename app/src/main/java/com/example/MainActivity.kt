@@ -63,6 +63,7 @@ enum class ScreenTab(val title: String, val icon: ImageVector) {
     LIVE_TV("টিভি", Icons.Default.Tv),
     MUSIC("মিউজিক", Icons.Default.MusicNote),
     YOUTUBE("ইউটিউব", Icons.Default.PlayCircle),
+    WEATHER("আবহাওয়া", Icons.Default.WbSunny),
     MUKUL_OTT("ওটিটি", Icons.Default.VideoLibrary),
     EXTRACTOR("ডাউনলোড", Icons.Default.CloudDownload),
     PROFILE("প্রোফাইল", Icons.Default.Person)
@@ -208,10 +209,10 @@ fun MukulPlusApp() {
         return
     }
 
-    // Modal Drawer for Sidebar (Disable gestures on Extractor/YouTube to prevent scroll conflict)
+    // Modal Drawer for Sidebar (Disable gestures on Extractor/YouTube/Weather to prevent scroll conflict)
     ModalNavigationDrawer(
         drawerState = drawerState,
-        gesturesEnabled = drawerState.isOpen || (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE),
+        gesturesEnabled = drawerState.isOpen || (currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER),
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = CinemaSurface,
@@ -330,6 +331,17 @@ fun MukulPlusApp() {
                     )
 
                     NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.WbSunny, contentDescription = null, tint = if (currentTab == ScreenTab.WEATHER) Color(0xFFFFB020) else TextSecondary) },
+                        label = { Text("আবহাওয়া পূর্বাভাস") },
+                        selected = currentTab == ScreenTab.WEATHER,
+                        onClick = {
+                            currentTab = ScreenTab.WEATHER
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
                         icon = { Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = if (currentTab == ScreenTab.MUKUL_OTT) BrandRed else TextSecondary) },
                         label = { Text("মুকুল ওটিটি") },
                         selected = currentTab == ScreenTab.MUKUL_OTT,
@@ -432,7 +444,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE) {
+                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER) {
                     Surface(
                         color = CinemaSurface,
                         tonalElevation = 3.dp,
@@ -510,6 +522,7 @@ fun MukulPlusApp() {
                                 ScreenTab.LIVE_TV,
                                 ScreenTab.MUSIC,
                                 ScreenTab.YOUTUBE,
+                                ScreenTab.WEATHER,
                                 ScreenTab.MUKUL_OTT,
                                 ScreenTab.EXTRACTOR
                             )
@@ -589,7 +602,8 @@ fun MukulPlusApp() {
                             onNavigateToMovies = { currentTab = ScreenTab.MOVIES },
                             onNavigateToLiveTv = { currentTab = ScreenTab.LIVE_TV },
                             onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR },
-                            onNavigateToMusic = { currentTab = ScreenTab.MUSIC }
+                            onNavigateToMusic = { currentTab = ScreenTab.MUSIC },
+                            onNavigateToWeather = { currentTab = ScreenTab.WEATHER }
                         )
                     }
                     ScreenTab.MOVIES -> {
@@ -610,6 +624,11 @@ fun MukulPlusApp() {
                     ScreenTab.YOUTUBE -> {
                         YouTubeScreen(
                             onNavigateToDownloads = { currentTab = ScreenTab.EXTRACTOR }
+                        )
+                    }
+                    ScreenTab.WEATHER -> {
+                        WeatherScreen(
+                            onNavigateHome = { currentTab = ScreenTab.HOME }
                         )
                     }
                     ScreenTab.MUKUL_OTT -> {

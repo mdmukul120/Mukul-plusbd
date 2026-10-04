@@ -49,7 +49,6 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.api.YouTubeApiService
 import com.example.data.api.YouTubeVideoItem
-import com.example.data.download.*
 import com.example.ui.theme.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -102,14 +101,6 @@ fun YouTubeScreen(
     var activeVideo by remember { mutableStateOf<YouTubeVideoItem?>(null) }
     var relatedVideos by remember { mutableStateOf<List<YouTubeVideoItem>>(emptyList()) }
     var isLoadingRelated by remember { mutableStateOf(false) }
-
-    // Download state variables
-    var showResolutionDialog by remember { mutableStateOf(false) }
-    var targetDownloadVideo by remember { mutableStateOf<YouTubeVideoItem?>(null) }
-    var extractionResult by remember { mutableStateOf<com.example.data.download.ExtractionResult?>(null) }
-    var isExtracting by remember { mutableStateOf(false) }
-    var extractionStatus by remember { mutableStateOf("") }
-    var extractionJob by remember { mutableStateOf<Job?>(null) }
 
     // Background playback & state tracking
     LaunchedEffect(activeVideo) {
@@ -231,9 +222,6 @@ fun YouTubeScreen(
         when {
             isYouTubeFullScreen -> {
                 isYouTubeFullScreen = false
-            }
-            showResolutionDialog -> {
-                if (!isExtracting) showResolutionDialog = false
             }
             activeVideo != null -> {
                 activeVideo = null
@@ -565,19 +553,7 @@ fun YouTubeScreen(
                                 Icon(Icons.Default.Language, contentDescription = "Browser", tint = TextSecondary, modifier = Modifier.size(15.dp))
                             }
 
-                            Spacer(modifier = Modifier.width(2.dp))
 
-                            // Download Button
-                            IconButton(
-                                onClick = {
-                                    targetDownloadVideo = currentVideo
-                                    showResolutionDialog = true
-                                    extractionResult = null
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Default.CloudDownload, contentDescription = "Download", tint = CyanAccent, modifier = Modifier.size(16.dp))
-                            }
                         }
                     }
                 }
@@ -778,12 +754,7 @@ fun YouTubeScreen(
                         items(relatedVideos) { relVideo ->
                             YouTubeVideoRowItem(
                                 video = relVideo,
-                                onPlayClick = { openVideo(relVideo) },
-                                onDownloadClick = {
-                                    targetDownloadVideo = relVideo
-                                    showResolutionDialog = true
-                                    extractionResult = null
-                                }
+                                onPlayClick = { openVideo(relVideo) }
                             )
                         }
                     }
@@ -1074,12 +1045,7 @@ fun YouTubeScreen(
                                 items(videoList, key = { it.id }) { video ->
                                     YouTubeVideoTileCard(
                                         video = video,
-                                        onPlayClick = { openVideo(video) },
-                                        onDownloadClick = {
-                                            targetDownloadVideo = video
-                                            showResolutionDialog = true
-                                            extractionResult = null
-                                        }
+                                        onPlayClick = { openVideo(video) }
                                     )
                                 }
                                 item {
@@ -1100,12 +1066,7 @@ fun YouTubeScreen(
                                 items(videoList, key = { it.id }) { video ->
                                     YouTubeVideoGridCard(
                                         video = video,
-                                        onPlayClick = { openVideo(video) },
-                                        onDownloadClick = {
-                                            targetDownloadVideo = video
-                                            showResolutionDialog = true
-                                            extractionResult = null
-                                        }
+                                        onPlayClick = { openVideo(video) }
                                     )
                                 }
                                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
@@ -1124,307 +1085,11 @@ fun YouTubeScreen(
                                 items(videoList, key = { it.id }) { video ->
                                     YouTubeVideoCard(
                                         video = video,
-                                        onPlayClick = { openVideo(video) },
-                                        onDownloadClick = {
-                                            targetDownloadVideo = video
-                                            showResolutionDialog = true
-                                            extractionResult = null
-                                        }
+                                        onPlayClick = { openVideo(video) }
                                     )
                                 }
                                 item {
                                     LoadMoreButton(isLoadingMore = isLoadingMore, onClick = { loadMore() })
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // ==============================================================
-        // 3. RESOLUTION SELECTION & DOWNLOAD DIALOG
-        // ==============================================================
-        if (showResolutionDialog && targetDownloadVideo != null) {
-            val videoToDownload = targetDownloadVideo!!
-
-            Dialog(onDismissRequest = {
-                if (!isExtracting) {
-                    showResolutionDialog = false
-                    targetDownloadVideo = null
-                }
-            }) {
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(18.dp)
-                    ) {
-                        // Dialog Header
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = if (extractionResult != null) "ভিডিও প্রস্তুত!" else "রেজুলেশন নির্বাচন করুন",
-                                color = TextPrimary,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            IconButton(
-                                onClick = {
-                                    extractionJob?.cancel()
-                                    isExtracting = false
-                                    showResolutionDialog = false
-                                    targetDownloadVideo = null
-                                },
-                                modifier = Modifier.size(28.dp)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Target Video Preview
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(CinemaSurfaceVariant, RoundedCornerShape(12.dp))
-                                .padding(10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(videoToDownload.thumbnailUrl)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = null,
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .size(70.dp, 44.dp)
-                                    .clip(RoundedCornerShape(6.dp))
-                            )
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = videoToDownload.title,
-                                    color = TextPrimary,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Text(
-                                    text = videoToDownload.channelTitle,
-                                    color = TextMuted,
-                                    fontSize = 11.sp,
-                                    maxLines = 1
-                                )
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(14.dp))
-
-                        // Extraction Progress
-                        if (isExtracting) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 12.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                CircularProgressIndicator(color = BrandRed, modifier = Modifier.size(36.dp))
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text(
-                                    text = extractionStatus.ifEmpty { "ডাউনলোড লিঙ্ক তৈরি করা হচ্ছে..." },
-                                    color = TextPrimary,
-                                    fontSize = 12.5.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "অনুগ্রহ করে কয়েক সেকেন্ড অপেক্ষা করুন",
-                                    color = TextMuted,
-                                    fontSize = 10.5.sp
-                                )
-                            }
-                        } else if (extractionResult != null) {
-                            // Extraction Success State
-                            val res = extractionResult!!
-                            Column(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Surface(
-                                    shape = CircleShape,
-                                    color = Color(0xFF10B981).copy(alpha = 0.2f),
-                                    modifier = Modifier.size(48.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.CheckCircle,
-                                            contentDescription = null,
-                                            tint = Color(0xFF10B981),
-                                            modifier = Modifier.size(28.dp)
-                                        )
-                                    }
-                                }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-
-                                Text(
-                                    text = "সরাসরি ডাউনলোড শুরু করুন",
-                                    color = TextPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-
-                                Spacer(modifier = Modifier.height(16.dp))
-
-                                Button(
-                                    onClick = {
-                                        val vId = res.videoId.ifBlank { videoToDownload.id }
-                                        val taskId = InAppDownloader.startDownload(
-                                            context = context,
-                                            movieSlug = "yt_$vId",
-                                            title = videoToDownload.title,
-                                            poster = if (res.thumbnail.isNotBlank()) res.thumbnail else videoToDownload.thumbnailUrl,
-                                            quality = res.format,
-                                            downloadUrl = res.downloadUrl
-                                        )
-                                        Toast.makeText(context, "${res.format} ভিডিও অ্যাপ্লিকেশনে ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখতে পারবেন", Toast.LENGTH_LONG).show()
-                                        showResolutionDialog = false
-                                        targetDownloadVideo = null
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth().height(44.dp)
-                                ) {
-                                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("এখনই ডাউনলোড শুরু করুন", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        } else {
-                            // Resolutions List
-                            Text(
-                                text = "পছন্দের রেজুলেশন ট্যাপ করুন:",
-                                color = TextMuted,
-                                fontSize = 11.5.sp,
-                                modifier = Modifier.padding(bottom = 8.dp)
-                            )
-
-                            LazyColumn(
-                                modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(YouTubeDownloaderHelper.availableResolutions) { resItem ->
-                                    Surface(
-                                        onClick = {
-                                            isExtracting = true
-                                            extractionStatus = "${resItem.title} প্রসেস করা হচ্ছে..."
-                                            extractionJob = coroutineScope.launch {
-                                                val extractResult = YouTubeDownloaderHelper.extractDownloadUrl(
-                                                    youtubeUrl = videoToDownload.watchUrl,
-                                                    format = resItem.format,
-                                                    onProgressStatus = { extractionStatus = it }
-                                                )
-                                                isExtracting = false
-                                                if (extractResult.isSuccess) {
-                                                    val res = extractResult.getOrNull()
-                                                    if (res != null && res.downloadUrl.isNotEmpty()) {
-                                                        val vId = res.videoId.ifBlank { videoToDownload.id }
-                                                        InAppDownloader.startDownload(
-                                                            context = context,
-                                                            movieSlug = "yt_$vId",
-                                                            title = videoToDownload.title,
-                                                            poster = if (res.thumbnail.isNotBlank()) res.thumbnail else videoToDownload.thumbnailUrl,
-                                                            quality = res.format,
-                                                            downloadUrl = res.downloadUrl
-                                                        )
-                                                        Toast.makeText(context, "${res.format} ভিডিও অ্যাপ্লিকেশনে ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখতে পারবেন", Toast.LENGTH_LONG).show()
-                                                        showResolutionDialog = false
-                                                        targetDownloadVideo = null
-                                                    } else {
-                                                        extractionResult = res
-                                                    }
-                                                } else {
-                                                    val err = extractResult.exceptionOrNull()?.message ?: "ডাউনলোড লিঙ্ক তৈরি করতে ব্যর্থ হয়েছে"
-                                                    Toast.makeText(context, err, Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = CinemaSurfaceVariant,
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(
-                                                imageVector = if (resItem.isAudio) Icons.Default.MusicNote else Icons.Default.VideoLibrary,
-                                                contentDescription = null,
-                                                tint = if (resItem.isAudio) GoldRating else BrandRed,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = resItem.title,
-                                                    color = TextPrimary,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                                Text(
-                                                    text = resItem.subtitle,
-                                                    color = TextMuted,
-                                                    fontSize = 10.sp
-                                                )
-                                            }
-                                            Icon(
-                                                imageVector = Icons.Default.ArrowForwardIos,
-                                                contentDescription = null,
-                                                tint = TextMuted,
-                                                modifier = Modifier.size(11.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                item {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    OutlinedButton(
-                                        onClick = {
-                                            val browserUrl = YouTubeDownloaderHelper.getBrowserDownloadUrl(videoToDownload.id)
-                                            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(browserUrl))
-                                            try {
-                                                context.startActivity(intent)
-                                                showResolutionDialog = false
-                                                targetDownloadVideo = null
-                                            } catch (_: Exception) {
-                                                Toast.makeText(context, "ব্রাউজার খোলা যায়নি", Toast.LENGTH_SHORT).show()
-                                            }
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f)),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanAccent),
-                                        modifier = Modifier.fillMaxWidth().height(38.dp)
-                                    ) {
-                                        Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("🌐 ব্রাউজারে দ্রুত ডাউনলোড (SaveFrom)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
                                 }
                             }
                         }
@@ -1441,8 +1106,7 @@ fun YouTubeScreen(
 @Composable
 private fun YouTubeVideoCard(
     video: YouTubeVideoItem,
-    onPlayClick: () -> Unit,
-    onDownloadClick: () -> Unit
+    onPlayClick: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(10.dp),
@@ -1571,7 +1235,7 @@ private fun YouTubeVideoCard(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
-                // Direct Action Buttons: Slim Play & Download
+                // Direct Action Button: Slim Play
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.End,
@@ -1581,29 +1245,15 @@ private fun YouTubeVideoCard(
                         onClick = onPlayClick,
                         shape = RoundedCornerShape(6.dp),
                         colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = CinemaSurfaceVariant,
-                            contentColor = TextPrimary
+                            containerColor = BrandRed.copy(alpha = 0.2f),
+                            contentColor = BrandRedLight
                         ),
-                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 1.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                         modifier = Modifier.height(24.dp)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(11.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
                         Text("প্লে", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Spacer(modifier = Modifier.width(6.dp))
-
-                    Button(
-                        onClick = onDownloadClick,
-                        shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                        contentPadding = PaddingValues(horizontal = 7.dp, vertical = 1.dp),
-                        modifier = Modifier.height(24.dp)
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(11.dp))
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Text("ডাউনলোড", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1617,8 +1267,7 @@ private fun YouTubeVideoCard(
 @Composable
 private fun YouTubeVideoTileCard(
     video: YouTubeVideoItem,
-    onPlayClick: () -> Unit,
-    onDownloadClick: () -> Unit
+    onPlayClick: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(14.dp),
@@ -1750,36 +1399,20 @@ private fun YouTubeVideoTileCard(
                         }
                     }
 
-                    // Action buttons
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilledTonalButton(
-                            onClick = onPlayClick,
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = CinemaSurfaceVariant,
-                                contentColor = TextPrimary
-                            ),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
-                            modifier = Modifier.height(26.dp)
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text("প্লে", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                        }
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        Button(
-                            onClick = onDownloadClick,
-                            shape = RoundedCornerShape(6.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 1.dp),
-                            modifier = Modifier.height(26.dp)
-                        ) {
-                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(12.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text("ডাউনলোড", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                        }
+                    // Action button: Play
+                    FilledTonalButton(
+                        onClick = onPlayClick,
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = BrandRed,
+                            contentColor = Color.White
+                        ),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 2.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(13.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("প্লে করুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1793,8 +1426,7 @@ private fun YouTubeVideoTileCard(
 @Composable
 private fun YouTubeVideoGridCard(
     video: YouTubeVideoItem,
-    onPlayClick: () -> Unit,
-    onDownloadClick: () -> Unit
+    onPlayClick: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -1861,34 +1493,22 @@ private fun YouTubeVideoGridCard(
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     FilledTonalButton(
                         onClick = onPlayClick,
-                        shape = RoundedCornerShape(5.dp),
+                        shape = RoundedCornerShape(6.dp),
                         colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = CinemaSurfaceVariant,
-                            contentColor = TextPrimary
+                            containerColor = BrandRed.copy(alpha = 0.2f),
+                            contentColor = BrandRedLight
                         ),
-                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
-                        modifier = Modifier.height(23.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                        modifier = Modifier.fillMaxWidth().height(25.dp)
                     ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(10.dp))
-                        Spacer(modifier = Modifier.width(1.dp))
-                        Text("প্লে", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = onDownloadClick,
-                        shape = RoundedCornerShape(5.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                        contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp),
-                        modifier = Modifier.height(23.dp)
-                    ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(10.dp))
-                        Spacer(modifier = Modifier.width(1.dp))
-                        Text("ডাউনলোড", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(12.dp))
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text("প্লে করুন", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -1942,8 +1562,7 @@ private fun LoadMoreButton(
 @Composable
 private fun YouTubeVideoRowItem(
     video: YouTubeVideoItem,
-    onPlayClick: () -> Unit,
-    onDownloadClick: () -> Unit
+    onPlayClick: () -> Unit
 ) {
     Surface(
         onClick = onPlayClick,
@@ -2012,16 +1631,19 @@ private fun YouTubeVideoRowItem(
                 )
             }
 
-            IconButton(
-                onClick = onDownloadClick,
-                modifier = Modifier.size(36.dp)
+            Surface(
+                shape = CircleShape,
+                color = BrandRed.copy(alpha = 0.15f),
+                modifier = Modifier.size(32.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.CloudDownload,
-                    contentDescription = "Download",
-                    tint = BrandRed,
-                    modifier = Modifier.size(19.dp)
-                )
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play",
+                        tint = BrandRedLight,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
         }
     }
