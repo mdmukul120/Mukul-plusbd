@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -16,13 +18,10 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -36,25 +35,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.example.data.api.BanglaMovieApiClient
+import com.example.data.api.ApiClient
 import com.example.data.download.InAppDownloader
-import com.example.data.model.*
+import com.example.data.model.CtgMovie
+import com.example.data.repository.MediaRepository
 import com.example.ui.components.VideoPlayerView
 import com.example.ui.theme.*
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private val BongoBrandRed = Color(0xFFE50914)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BanglaOttScreen(
+    mediaRepository: MediaRepository? = null,
     onBack: (() -> Unit)? = null,
     onNavigateToDownloads: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -63,115 +65,111 @@ fun BanglaOttScreen(
     val coroutineScope = rememberCoroutineScope()
 
     // ------------------------------------------------------------------------
-    // Catalog & Filter State
+    // Bongo Videos State
     // ------------------------------------------------------------------------
-    var movies by remember { mutableStateOf<List<BanglaMovie>>(emptyList()) }
-    var currentPage by remember { mutableIntStateOf(1) }
-    var totalPages by remember { mutableIntStateOf(1) }
-    var totalMoviesCount by remember { mutableIntStateOf(0) }
+    var allBongoVideos by remember { mutableStateOf<List<CtgMovie>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
 
-    var selectedPlatform by remember { mutableStateOf<String?>(null) }
-    var selectedLanguage by remember { mutableStateOf<String?>(null) }
-    var selectedType by remember { mutableStateOf<String?>(null) } // null, "MOVIE", "SERIES"
-
     var searchQuery by remember { mutableStateOf("") }
-    var searchJob by remember { mutableStateOf<Job?>(null) }
+    var selectedCategory by remember { mutableStateOf<String?>(null) }
 
-    // ------------------------------------------------------------------------
-    // Second Page Navigation: Active Movie Id
-    // ------------------------------------------------------------------------
-    var activeMovieId by remember { mutableStateOf<String?>(null) }
+    // Active Selected Bongo Movie for Second Page Video Player
+    var activeBongoMovie by remember { mutableStateOf<CtgMovie?>(null) }
 
-    // ------------------------------------------------------------------------
-    // Download Dialog State
-    // ------------------------------------------------------------------------
-    var showDownloadDialog by remember { mutableStateOf(false) }
-    var targetDownloadMovie by remember { mutableStateOf<BanglaMovie?>(null) }
-    var downloadDialogDetail by remember { mutableStateOf<BanglaMovieDetail?>(null) }
-    var isLoadingDownloadDetail by remember { mutableStateOf(false) }
-
-    // Back handler for first page
-    BackHandler(enabled = activeMovieId == null && (searchQuery.isNotEmpty() || onBack != null)) {
-        if (searchQuery.isNotEmpty()) {
-            searchQuery = ""
-        } else if (onBack != null) {
-            onBack()
-        }
-    }
-
-    // Function to fetch movies
-    fun loadCatalog(page: Int = currentPage) {
+    // Load all Bongo videos from MediaRepository or ApiClient
+    fun loadBongoCatalog(forceRefresh: Boolean = false) {
         isLoading = true
         coroutineScope.launch {
             try {
-                val res = BanglaMovieApiClient.fetchMovies(
-                    page = page,
-                    limit = 20,
-                    platform = selectedPlatform,
-                    language = selectedLanguage,
-                    type = selectedType,
-                    searchQuery = searchQuery.ifBlank { null }
-                )
-                movies = res.movies
-                currentPage = res.page
-                totalPages = res.totalPages
-                totalMoviesCount = res.totalMovies
-            } catch (_: Exception) {
+                val videos = if (mediaRepository != null) {
+                    mediaRepository.getBongoVideos(forceRefresh)
+                } else {
+                    ApiClient.fetchBongoVideos()
+                }
+                allBongoVideos = videos
+            } catch (e: Exception) {
+                // Fallback to ApiClient
+                try {
+                    allBongoVideos = ApiClient.fetchBongoVideos()
+                } catch (_: Exception) {}
             } finally {
                 isLoading = false
             }
         }
     }
 
-    // Load on change of filters
-    LaunchedEffect(selectedPlatform, selectedLanguage, selectedType) {
-        currentPage = 1
-        loadCatalog(1)
+    LaunchedEffect(Unit) {
+        loadBongoCatalog()
     }
 
-    // Search query listener with debounce
-    LaunchedEffect(searchQuery) {
-        searchJob?.cancel()
-        searchJob = coroutineScope.launch {
-            delay(300)
-            currentPage = 1
-            loadCatalog(1)
+    // Dynamic categories extracted from Bongo videos
+    val categories = remember(allBongoVideos) {
+        val set = mutableSetOf<String>()
+        allBongoVideos.forEach { movie ->
+            val g = movie.genre ?: ""
+            when {
+                g.contains("Drama", ignoreCase = true) || g.contains("নাটক", ignoreCase = true) -> set.add("Bangla Drama")
+                g.contains("Series", ignoreCase = true) || g.contains("সিরিজ", ignoreCase = true) -> set.add("Web Series")
+                g.contains("Movie", ignoreCase = true) || g.contains("সিনেমা", ignoreCase = true) -> set.add("Bangla Movie")
+                g.contains("Comedy", ignoreCase = true) -> set.add("Comedy")
+                g.contains("Thriller", ignoreCase = true) || g.contains("Crime", ignoreCase = true) -> set.add("Thriller")
+                g.contains("Romance", ignoreCase = true) -> set.add("Romance")
+                g.contains("Action", ignoreCase = true) -> set.add("Action")
+            }
         }
+        listOf("সব (All)") + set.toList().sorted()
     }
 
-    // Trigger download dialog detail fetch
-    fun openDownloadDialog(movie: BanglaMovie) {
-        targetDownloadMovie = movie
-        showDownloadDialog = true
-        isLoadingDownloadDetail = true
-        downloadDialogDetail = null
+    // Filtered Bongo Videos
+    val filteredVideos = remember(allBongoVideos, searchQuery, selectedCategory) {
+        var list = allBongoVideos
 
-        coroutineScope.launch {
-            val d = BanglaMovieApiClient.fetchMovieDetail(movie.id)
-            downloadDialogDetail = d
-            isLoadingDownloadDetail = false
+        if (!selectedCategory.isNullOrBlank() && selectedCategory != "সব (All)") {
+            list = list.filter { movie ->
+                movie.genre?.contains(selectedCategory!!, ignoreCase = true) == true ||
+                movie.original_title?.contains(selectedCategory!!, ignoreCase = true) == true
+            }
         }
+
+        if (searchQuery.isNotBlank()) {
+            val q = searchQuery.trim()
+            list = list.filter { movie ->
+                movie.title.contains(q, ignoreCase = true) ||
+                (movie.casts?.contains(q, ignoreCase = true) == true) ||
+                (movie.genre?.contains(q, ignoreCase = true) == true) ||
+                (movie.overview?.contains(q, ignoreCase = true) == true)
+            }
+        }
+
+        list
     }
 
     // ========================================================================
-    // SECOND PAGE: OTT MOVIE/SERIES PLAYER & DETAIL SCREEN
+    // SECOND PAGE: OTT VIDEO PLAYER & DETAIL SCREEN
     // (হুবহু ওটিটি পেজের মতো ভিডিও প্লেয়ার ও বিশদ বিবরণ)
     // ========================================================================
-    if (activeMovieId != null) {
-        BanglaOttDetailPlayerScreen(
-            movieId = activeMovieId!!,
-            onBack = { activeMovieId = null },
+    if (activeBongoMovie != null) {
+        BongoOttDetailPlayerScreen(
+            movie = activeBongoMovie!!,
+            allBongoVideos = allBongoVideos,
+            onBack = { activeBongoMovie = null },
             onNavigateToDownloads = onNavigateToDownloads,
-            onSelectRelatedMovie = { nextId -> activeMovieId = nextId },
+            onSelectRelatedMovie = { nextMovie -> activeBongoMovie = nextMovie },
             modifier = modifier
         )
         return
     }
 
     // ========================================================================
-    // FIRST PAGE: BANGLA OTT CATALOG SCREEN
+    // FIRST PAGE: BONGO OTT CATALOG SCREEN
     // ========================================================================
+    BackHandler(enabled = searchQuery.isNotEmpty() || onBack != null) {
+        if (searchQuery.isNotEmpty()) {
+            searchQuery = ""
+        } else if (onBack != null) {
+            onBack()
+        }
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -210,28 +208,43 @@ fun BanglaOttScreen(
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = BrandRed.copy(alpha = 0.2f),
+                                color = BongoBrandRed.copy(alpha = 0.2f),
                                 modifier = Modifier.size(34.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Icon(
                                         imageVector = Icons.Default.Subscriptions,
                                         contentDescription = null,
-                                        tint = BrandRed,
+                                        tint = BongoBrandRed,
                                         modifier = Modifier.size(19.dp)
                                     )
                                 }
                             }
                             Spacer(modifier = Modifier.width(8.dp))
                             Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = "বাংলা ওটিটি",
+                                        color = TextPrimary,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = BongoBrandRed
+                                    ) {
+                                        Text(
+                                            text = "BONGO BD",
+                                            color = Color.White,
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
                                 Text(
-                                    text = "বাংলা ওটিটি (Bangla OTT)",
-                                    color = TextPrimary,
-                                    fontSize = 15.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(
-                                    text = if (totalMoviesCount > 0) "$totalMoviesCount টি মুভি ও সিরিজ" else "চরকি, হইচই, বঙ্গ, নেটফ্লিক্স ও আরও",
+                                    text = if (filteredVideos.isNotEmpty()) "${filteredVideos.size} টি মুভি, নাটক ও ওয়েব সিরিজ" else "বংগো বিডি এক্সক্লুসিভ বাংলা কনটেন্ট",
                                     color = TextMuted,
                                     fontSize = 10.5.sp
                                 )
@@ -249,7 +262,7 @@ fun BanglaOttScreen(
                         }
 
                         // Refresh button
-                        IconButton(onClick = { loadCatalog(currentPage) }) {
+                        IconButton(onClick = { loadBongoCatalog(forceRefresh = true) }) {
                             Icon(
                                 imageVector = Icons.Default.Refresh,
                                 contentDescription = "Refresh",
@@ -270,8 +283,8 @@ fun BanglaOttScreen(
                         OutlinedTextField(
                             value = searchQuery,
                             onValueChange = { searchQuery = it },
-                            placeholder = { Text("মুভি বা সিরিজের নাম দিয়ে খুঁজুন...", color = TextMuted, fontSize = 12.5.sp) },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BrandRed, modifier = Modifier.size(18.dp)) },
+                            placeholder = { Text("বংগো নাটক, মুভি বা অভিনেতার নাম দিয়ে খুঁজুন...", color = TextMuted, fontSize = 12.sp) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = BongoBrandRed, modifier = Modifier.size(18.dp)) },
                             trailingIcon = {
                                 if (searchQuery.isNotEmpty()) {
                                     IconButton(onClick = { searchQuery = "" }) {
@@ -281,7 +294,7 @@ fun BanglaOttScreen(
                             },
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = BrandRed,
+                                focusedBorderColor = BongoBrandRed,
                                 unfocusedBorderColor = CinemaBorder,
                                 focusedTextColor = TextPrimary,
                                 unfocusedTextColor = TextPrimary
@@ -302,81 +315,46 @@ fun BanglaOttScreen(
                 .padding(innerPadding)
         ) {
             // ================================================================
-            // FILTER CHIPS ROW (প্ল্যাটফর্ম ও ক্যাটাগরি চিপস)
+            // CATEGORY FILTER CHIPS ROW
             // ================================================================
             Surface(
                 color = CinemaSurface,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                    // Row 1: OTT Platforms (Chorki, Hoichoi, Bongo, Toffee, Binge, Deepto Play, iScreen, Netflix, etc.)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        BanglaMovieApiClient.platforms.forEach { (label, value) ->
-                            val isSelected = selectedPlatform == value
-                            Surface(
-                                onClick = { selectedPlatform = value },
-                                shape = RoundedCornerShape(16.dp),
-                                color = if (isSelected) BrandRed else CinemaSurfaceVariant,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) BrandRedLight else CinemaBorder)
-                            ) {
-                                Text(
-                                    text = label,
-                                    color = if (isSelected) Color.White else TextSecondary,
-                                    fontSize = 11.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    // Row 2: Type & Languages
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        // All Type
-                        TypeChip(label = "সব কন্টেন্ট", isSelected = selectedType == null) { selectedType = null }
-                        TypeChip(label = "মুভি", isSelected = selectedType == "MOVIE") { selectedType = "MOVIE" }
-                        TypeChip(label = "ওয়েব সিরিজ", isSelected = selectedType == "SERIES") { selectedType = "SERIES" }
-
-                        Spacer(modifier = Modifier.width(4.dp))
-
-                        // Languages
-                        BanglaMovieApiClient.languages.forEach { (label, value) ->
-                            val isLangSelected = selectedLanguage == value
-                            Surface(
-                                onClick = { selectedLanguage = value },
-                                shape = RoundedCornerShape(16.dp),
-                                color = if (isLangSelected) CyanAccent.copy(alpha = 0.2f) else CinemaSurfaceVariant,
-                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isLangSelected) CyanAccent else CinemaBorder)
-                            ) {
-                                Text(
-                                    text = label,
-                                    color = if (isLangSelected) CyanAccent else TextMuted,
-                                    fontSize = 10.5.sp,
-                                    fontWeight = if (isLangSelected) FontWeight.Bold else FontWeight.Normal,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                )
-                            }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    categories.forEach { cat ->
+                        val isSelected = (selectedCategory == null && cat == "সব (All)") || selectedCategory == cat
+                        Surface(
+                            onClick = {
+                                selectedCategory = if (cat == "সব (All)") null else cat
+                            },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isSelected) BongoBrandRed else CinemaSurfaceVariant,
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isSelected) BongoBrandRed else CinemaBorder
+                            )
+                        ) {
+                            Text(
+                                text = cat,
+                                color = if (isSelected) Color.White else TextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp)
+                            )
                         }
                     }
                 }
             }
 
             // ================================================================
-            // 3. MOVIE CATALOG GRID
+            // BONGO VIDEOS GRID (মুভি ও নাটকের গ্রিড)
             // ================================================================
             if (isLoading) {
                 Box(
@@ -386,12 +364,12 @@ fun BanglaOttScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        CircularProgressIndicator(color = BrandRed, modifier = Modifier.size(38.dp))
+                        CircularProgressIndicator(color = BongoBrandRed, modifier = Modifier.size(38.dp))
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text("মুভি ও সিরিজ লোড হচ্ছে...", color = TextSecondary, fontSize = 12.5.sp)
+                        Text("বংগো বিডি ভিডিও লোড হচ্ছে...", color = TextSecondary, fontSize = 12.5.sp)
                     }
                 }
-            } else if (movies.isEmpty()) {
+            } else if (filteredVideos.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -404,19 +382,16 @@ fun BanglaOttScreen(
                     ) {
                         Icon(Icons.Default.MovieFilter, contentDescription = null, tint = TextMuted, modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(10.dp))
-                        Text("কোনো কন্টেন্ট খুঁজে পাওয়া যায়নি", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text("কোনো ভিডিও পাওয়া যায়নি", color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text("অন্য প্ল্যাটফর্ম বা ফিল্টার নির্বাচন করে চেষ্টা করুন", color = TextMuted, fontSize = 11.5.sp, textAlign = TextAlign.Center)
+                        Text("সার্চ পরিবর্তন করে চেষ্টা করুন", color = TextMuted, fontSize = 11.5.sp)
                         Spacer(modifier = Modifier.height(12.dp))
                         Button(
                             onClick = {
-                                selectedPlatform = null
-                                selectedLanguage = null
-                                selectedType = null
                                 searchQuery = ""
-                                loadCatalog(1)
+                                selectedCategory = null
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                            colors = ButtonDefaults.buttonColors(containerColor = BongoBrandRed),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("ফিল্টার রিসেট করুন")
@@ -433,23 +408,24 @@ fun BanglaOttScreen(
                         .fillMaxSize()
                         .weight(1f)
                 ) {
-                    items(movies, key = { it.id }) { movie ->
-                        BanglaMovieCard(
+                    items(filteredVideos, key = { it.id }) { movie ->
+                        BongoMovieCard(
                             movie = movie,
-                            onPlayClick = { activeMovieId = movie.id },
-                            onDownloadClick = { openDownloadDialog(movie) }
-                        )
-                    }
-
-                    // Pagination Footer
-                    item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
-                        BanglaOttPaginationBar(
-                            currentPage = currentPage,
-                            totalPages = totalPages,
-                            onPageChange = { newPage ->
-                                if (newPage in 1..totalPages) {
-                                    currentPage = newPage
-                                    loadCatalog(newPage)
+                            onPlayClick = { activeBongoMovie = movie },
+                            onDownloadClick = {
+                                val streamUrl = movie.getFullStreamUrl() ?: ""
+                                if (streamUrl.isNotBlank()) {
+                                    InAppDownloader.startDownload(
+                                        context = context,
+                                        movieSlug = "bongo_${movie.id}",
+                                        title = movie.title,
+                                        poster = movie.getFullPosterUrl(),
+                                        quality = "Full HD",
+                                        downloadUrl = streamUrl
+                                    )
+                                    Toast.makeText(context, "${movie.title} ডাউনলোড শুরু হয়েছে!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "ডাউনলোড লিংক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         )
@@ -458,245 +434,494 @@ fun BanglaOttScreen(
             }
         }
     }
+}
 
-    // ================================================================
-    // 4. DOWNLOAD RESOLUTION PICKER MODAL DIALOG
-    // ================================================================
-    if (showDownloadDialog && targetDownloadMovie != null) {
-        val target = targetDownloadMovie!!
-        AlertDialog(
-            onDismissRequest = { showDownloadDialog = false },
-            containerColor = CinemaSurface,
-            shape = RoundedCornerShape(18.dp),
-            title = {
+/**
+ * Dedicated Second Page: OTT Video Player & Movie Detail Screen for Bongo BD
+ * (হুবহু ওটিটি পেজের মতো ভিডিও প্লেয়ার ও বিশদ বিবরণ)
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BongoOttDetailPlayerScreen(
+    movie: CtgMovie,
+    allBongoVideos: List<CtgMovie>,
+    onBack: () -> Unit,
+    onNavigateToDownloads: () -> Unit = {},
+    onSelectRelatedMovie: (CtgMovie) -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    var isStorylineExpanded by remember { mutableStateOf(false) }
+
+    val streamUrl = remember(movie) { movie.getFullStreamUrl() ?: "" }
+
+    // Related Bongo videos
+    val relatedVideos = remember(movie, allBongoVideos) {
+        allBongoVideos.filter { it.id != movie.id }.take(10)
+    }
+
+    BackHandler {
+        onBack()
+    }
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = CinemaBackground,
+        topBar = {
+            Surface(
+                color = CinemaSurface,
+                tonalElevation = 4.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .height(52.dp)
+                        .padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.CloudDownload, contentDescription = null, tint = BrandRed, modifier = Modifier.size(22.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "ডাউনলোড রেজুলেশন",
-                        color = TextPrimary,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            },
-            text = {
-                Column(modifier = Modifier.fillMaxWidth()) {
-                    // Movie info header
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(CinemaSurfaceVariant, RoundedCornerShape(10.dp))
-                            .padding(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        AsyncImage(
-                            model = target.poster,
-                            contentDescription = target.title,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier
-                                .size(width = 46.dp, height = 64.dp)
-                                .clip(RoundedCornerShape(6.dp))
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = TextPrimary
                         )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column {
                             Text(
-                                text = target.title,
+                                text = movie.title,
                                 color = TextPrimary,
-                                fontSize = 12.5.sp,
+                                fontSize = 14.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                maxLines = 2,
+                                maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            if (!target.platform.isNullOrBlank()) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Surface(
+                                    shape = RoundedCornerShape(3.dp),
+                                    color = BongoBrandRed
+                                ) {
+                                    Text(
+                                        text = "BONGO BD",
+                                        color = Color.White,
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = target.platform,
-                                    color = BrandRedLight,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = movie.genre ?: "Bangla Drama",
+                                    color = TextMuted,
+                                    fontSize = 10.5.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
-
-                    if (isLoadingDownloadDetail) {
-                        Box(
-                            modifier = Modifier.fillMaxWidth().padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            CircularProgressIndicator(color = BrandRed, modifier = Modifier.size(32.dp))
+                    // Share Button
+                    IconButton(
+                        onClick = {
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_SUBJECT, movie.title)
+                                putExtra(Intent.EXTRA_TEXT, "${movie.title}\nবংগো বিডি এক্সক্লুসিভ বাংলা কন্টেন্ট দেখুন Mukul Plus এ!\n$streamUrl")
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "শেয়ার করুন"))
                         }
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Share", tint = TextSecondary, modifier = Modifier.size(20.dp))
+                    }
+
+                    // Downloads Shortcut Button
+                    IconButton(onClick = onNavigateToDownloads) {
+                        Icon(Icons.Default.CloudDownload, contentDescription = "Downloads", tint = CyanAccent, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            contentPadding = PaddingValues(bottom = 120.dp)
+        ) {
+            // ============================================================
+            // 1. HERO 16:9 VIDEO PLAYER (হুবহু ওটিটি প্লেয়ারের মতো)
+            // ============================================================
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(16f / 9f)
+                        .background(Color.Black)
+                ) {
+                    if (streamUrl.isNotBlank()) {
+                        VideoPlayerView(
+                            videoUrl = streamUrl,
+                            title = movie.title,
+                            modifier = Modifier.fillMaxSize()
+                        )
                     } else {
-                        val detail = downloadDialogDetail
-                        val allQualities = detail?.qualities.orEmpty().ifEmpty {
-                            detail?.downloadServers?.firstOrNull()?.qualities.orEmpty().ifEmpty {
-                                detail?.downloadServers?.firstOrNull()?.episodeBundles?.firstOrNull()?.qualities.orEmpty()
+                        // Fallback Poster View
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            AsyncImage(
+                                model = movie.getFullBackdropUrl(),
+                                contentDescription = movie.title,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.6f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("ভিডিও লোড হচ্ছে...", color = Color.White, fontSize = 13.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ============================================================
+            // 2. STREAMING STATUS & QUALITY BAR
+            // ============================================================
+            item {
+                Surface(
+                    color = CinemaSurface,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFF10B981),
+                                modifier = Modifier.size(7.dp)
+                            ) {}
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Bongo BD Direct Stream • 1080p Full HD",
+                                color = TextPrimary,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = BongoBrandRed.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "HLS LIVE",
+                                color = BongoBrandRed,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ============================================================
+            // 3. ACTION BUTTONS: PLAY, DOWNLOAD, BROWSER, COPY LINK
+            // ============================================================
+            item {
+                Surface(
+                    color = CinemaSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // 1. Play / Replay Button
+                        Button(
+                            onClick = {
+                                Toast.makeText(context, "ভিডিও প্লেয়ার চালু রয়েছে", Toast.LENGTH_SHORT).show()
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = BongoBrandRed),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(36.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("প্লে", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // 2. Download Button
+                        Button(
+                            onClick = {
+                                if (streamUrl.isNotBlank()) {
+                                    InAppDownloader.startDownload(
+                                        context = context,
+                                        movieSlug = "bongo_${movie.id}",
+                                        title = movie.title,
+                                        poster = movie.getFullPosterUrl(),
+                                        quality = "Full HD",
+                                        downloadUrl = streamUrl
+                                    )
+                                    Toast.makeText(context, "${movie.title} ডাউনলোড শুরু হয়েছে!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, "ডাউনলোড লিংক পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3C72)),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .height(36.dp)
+                        ) {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("ডাউনলোড", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        // 3. Open in Browser Button
+                        FilledTonalButton(
+                            onClick = {
+                                if (streamUrl.isNotBlank()) {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(streamUrl))
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        Toast.makeText(context, "ব্রাউজার খোলা যায়নি", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = CinemaSurface,
+                                contentColor = TextPrimary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Default.Language, contentDescription = "Browser", modifier = Modifier.size(16.dp))
+                        }
+
+                        // 4. Copy Link Button
+                        FilledTonalButton(
+                            onClick = {
+                                if (streamUrl.isNotBlank()) {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("Bongo Link", streamUrl)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "ভিডিও লিংক কপি করা হয়েছে!", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = CinemaSurface,
+                                contentColor = CyanAccent
+                            ),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy Link", modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+
+            // ============================================================
+            // 4. OTT METADATA, STORYLINE & CAST
+            // ============================================================
+            item {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Text(
+                        text = movie.title,
+                        color = TextPrimary,
+                        fontSize = 16.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        lineHeight = 22.sp
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Metadata Badges (Platform, Rating, Year, Genre)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(color = BongoBrandRed, shape = RoundedCornerShape(4.dp)) {
+                            Text(
+                                text = "Bongo BD",
+                                color = Color.White,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.5.dp)
+                            )
+                        }
+
+                        val rating = movie.online_rating ?: movie.user_rating ?: 8.8
+                        Surface(color = Color(0xFFFFB020).copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFB020), modifier = Modifier.size(11.dp))
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(text = String.format("%.1f", rating), color = Color(0xFFFFB020), fontSize = 10.sp, fontWeight = FontWeight.Bold)
                             }
                         }
 
-                        if (allQualities.isEmpty()) {
+                        if (movie.year != null && movie.year > 0) {
+                            Surface(color = CinemaSurfaceVariant, shape = RoundedCornerShape(4.dp)) {
+                                Text(
+                                    text = "${movie.year}",
+                                    color = CyanAccent,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+
+                        Surface(color = CinemaSurfaceVariant, shape = RoundedCornerShape(4.dp)) {
                             Text(
-                                text = "এই মুভির সরাসরি ডাউনলোড লিঙ্ক এখনও প্রস্তুত নয়।",
-                                color = TextSecondary,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(vertical = 8.dp)
-                            )
-                        } else {
-                            Text(
-                                text = "পছন্দের রেজুলেশন সিলেক্ট করে সরাসরি ডাউনলোড শুরু করুন:",
+                                text = "Full HD • 1080p",
                                 color = TextMuted,
-                                fontSize = 11.sp,
-                                modifier = Modifier.padding(bottom = 8.dp)
+                                fontSize = 10.sp,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
+                        }
 
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 240.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                items(allQualities) { q ->
-                                    Surface(
-                                        onClick = {
-                                            showDownloadDialog = false
-                                            InAppDownloader.startDownload(
-                                                context = context,
-                                                movieSlug = "bangla_${target.id}",
-                                                title = target.title,
-                                                poster = target.poster,
-                                                quality = q.label,
-                                                downloadUrl = q.downloadUrl
-                                            )
-                                            Toast.makeText(
-                                                context,
-                                                "${q.label} ডাউনলোড শুরু হয়েছে! ডাউনলোড পেজে দেখতে পারবেন",
-                                                Toast.LENGTH_LONG
-                                            ).show()
-                                        },
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = CinemaSurfaceVariant,
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Icon(
-                                                    imageVector = Icons.Default.FileDownload,
-                                                    contentDescription = null,
-                                                    tint = BrandRed,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(8.dp))
-                                                Text(
-                                                    text = q.label,
-                                                    color = TextPrimary,
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                        if (!movie.genre.isNullOrBlank()) {
+                            Surface(color = CinemaSurfaceVariant, shape = RoundedCornerShape(4.dp)) {
+                                Text(
+                                    text = movie.genre,
+                                    color = TextSecondary,
+                                    fontSize = 10.sp,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
 
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                if (q.size.isNotBlank()) {
-                                                    Surface(
-                                                        color = BrandRed.copy(alpha = 0.15f),
-                                                        shape = RoundedCornerShape(4.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = q.size,
-                                                            color = BrandRedLight,
-                                                            fontSize = 10.5.sp,
-                                                            fontWeight = FontWeight.Bold,
-                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                        )
-                                                    }
-                                                    Spacer(modifier = Modifier.width(8.dp))
-                                                }
-                                                Icon(Icons.Default.ArrowForwardIos, contentDescription = null, tint = TextMuted, modifier = Modifier.size(11.dp))
-                                            }
-                                        }
-                                    }
-                                }
+                    // Synopsis / Storyline (কাহিনী সংক্ষেপ)
+                    val overview = movie.overview.orEmpty().ifBlank {
+                        "${movie.title} - বংগো বিডি এক্সক্লুসিভ বাংলা নাটক ও ওয়েব সিরিজ। এইচডি কোয়ালিটিতে উপভোগ করুন।"
+                    }
 
-                                // External / Browser open fallback option
-                                item {
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    allQualities.firstOrNull()?.let { firstQ ->
-                                        OutlinedButton(
-                                            onClick = {
-                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(firstQ.downloadUrl))
-                                                try {
-                                                    context.startActivity(intent)
-                                                    showDownloadDialog = false
-                                                } catch (_: Exception) {
-                                                    Toast.makeText(context, "ব্রাউজার খোলা যায়নি", Toast.LENGTH_SHORT).show()
-                                                }
-                                            },
-                                            shape = RoundedCornerShape(10.dp),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, CyanAccent.copy(alpha = 0.5f)),
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = CyanAccent),
-                                            modifier = Modifier.fillMaxWidth().height(36.dp)
-                                        ) {
-                                            Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(14.dp))
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Text("ব্রাউজারে লিঙ্ক খুলুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                        }
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(text = "কাহিনী সংক্ষেপ:", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = overview,
+                        color = TextSecondary,
+                        fontSize = 12.sp,
+                        lineHeight = 18.sp,
+                        maxLines = if (isStorylineExpanded) 100 else 3,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (overview.length > 100) {
+                        TextButton(
+                            onClick = { isStorylineExpanded = !isStorylineExpanded },
+                            contentPadding = PaddingValues(0.dp)
+                        ) {
+                            Text(
+                                text = if (isStorylineExpanded) "কম দেখুন" else "আরও পড়ুন...",
+                                color = CyanAccent,
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    // Casts
+                    if (!movie.casts.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(text = "অভিনয়ে:", color = TextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(text = movie.casts, color = TextMuted, fontSize = 11.5.sp)
+                    }
+                }
+            }
+
+            // ============================================================
+            // 5. RELATED BONGO VIDEOS (বংগো বিডি এর আরও কন্টেন্ট)
+            // ============================================================
+            if (relatedVideos.isNotEmpty()) {
+                item {
+                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        Text(
+                            text = "বংগো বিডি এর আরও নাটক ও সিনেমা",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            items(relatedVideos) { rMovie ->
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                    modifier = Modifier
+                                        .width(115.dp)
+                                        .clickable { onSelectRelatedMovie(rMovie) }
+                                ) {
+                                    Column {
+                                        AsyncImage(
+                                            model = rMovie.getFullPosterUrl(),
+                                            contentDescription = rMovie.title,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(150.dp)
+                                        )
+                                        Text(
+                                            text = rMovie.title,
+                                            color = TextPrimary,
+                                            fontSize = 10.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(6.dp)
+                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDownloadDialog = false }) {
-                    Text("বন্ধ করুন", color = BrandRed)
-                }
             }
-        )
+        }
     }
 }
 
 /**
- * Reusable Type Chip
+ * Bongo Movie Card with Poster, Bongo BD Branding, and Action Buttons
  */
 @Composable
-private fun TypeChip(
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = if (isSelected) Color(0xFFFFB020) else CinemaSurfaceVariant,
-        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFFFFB020) else CinemaBorder)
-    ) {
-        Text(
-            text = label,
-            color = if (isSelected) Color.Black else TextSecondary,
-            fontSize = 11.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-        )
-    }
-}
-
-/**
- * Bangla Movie Card with Poster, Badges, and Dual Play & Download Action Buttons
- */
-@Composable
-private fun BanglaMovieCard(
-    movie: BanglaMovie,
+private fun BongoMovieCard(
+    movie: CtgMovie,
     onPlayClick: () -> Unit,
     onDownloadClick: () -> Unit
 ) {
@@ -719,7 +944,7 @@ private fun BanglaMovieCard(
             ) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
-                        .data(movie.poster)
+                        .data(movie.getFullPosterUrl())
                         .crossfade(true)
                         .build(),
                     contentDescription = movie.title,
@@ -727,42 +952,30 @@ private fun BanglaMovieCard(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Top-Left: Platform Badge (e.g. Chorki, Hoichoi, Bongo)
-                if (!movie.platform.isNullOrBlank()) {
-                    val platformColor = when (movie.platform.lowercase()) {
-                        "chorki" -> Color(0xFFFF9900)
-                        "hoichoi" -> Color(0xFFE50914)
-                        "bongo" -> Color(0xFFE50914)
-                        "toffee" -> Color(0xFF0072B5)
-                        "binge" -> Color(0xFF9C27B0)
-                        "netflix" -> Color(0xFFE50914)
-                        "prime video" -> Color(0xFF00A8E1)
-                        else -> BrandRed
-                    }
-                    Surface(
-                        color = platformColor,
-                        shape = RoundedCornerShape(bottomEnd = 6.dp),
-                        modifier = Modifier.align(Alignment.TopStart)
-                    ) {
-                        Text(
-                            text = movie.platform,
-                            color = Color.White,
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                        )
-                    }
+                // Top-Left: Bongo BD Brand Badge
+                Surface(
+                    color = BongoBrandRed,
+                    shape = RoundedCornerShape(bottomEnd = 6.dp),
+                    modifier = Modifier.align(Alignment.TopStart)
+                ) {
+                    Text(
+                        text = "Bongo",
+                        color = Color.White,
+                        fontSize = 8.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
                 }
 
-                // Top-Right: Type / Quality (WEB-DL, HD)
+                // Top-Right: Quality Badge
                 Surface(
                     color = Color.Black.copy(alpha = 0.75f),
                     shape = RoundedCornerShape(bottomStart = 6.dp),
                     modifier = Modifier.align(Alignment.TopEnd)
                 ) {
                     Text(
-                        text = if (movie.type == "SERIES") "SERIES" else movie.printQuality,
-                        color = if (movie.type == "SERIES") CyanAccent else Color.White,
+                        text = if (movie.genre?.contains("Series", ignoreCase = true) == true) "SERIES" else "Full HD",
+                        color = if (movie.genre?.contains("Series", ignoreCase = true) == true) CyanAccent else Color.White,
                         fontSize = 8.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
@@ -787,7 +1000,7 @@ private fun BanglaMovieCard(
                     }
                 }
 
-                // Bottom Overlay: Rating & Language
+                // Bottom Overlay: Rating & Year
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -801,28 +1014,23 @@ private fun BanglaMovieCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (movie.rating > 0.0) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFB020), modifier = Modifier.size(10.dp))
-                            Spacer(modifier = Modifier.width(2.dp))
-                            Text(
-                                text = String.format("%.1f", movie.rating),
-                                color = Color.White,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    } else {
-                        Spacer(modifier = Modifier.width(4.dp))
+                    val rating = movie.online_rating ?: movie.user_rating ?: 8.8
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Star, contentDescription = null, tint = Color(0xFFFFB020), modifier = Modifier.size(10.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text(
+                            text = String.format("%.1f", rating),
+                            color = Color.White,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
-                    if (movie.language.isNotBlank()) {
+                    if (movie.year != null && movie.year > 0) {
                         Text(
-                            text = movie.language,
+                            text = "${movie.year}",
                             color = Color.White.copy(alpha = 0.85f),
-                            fontSize = 8.5.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            fontSize = 8.5.sp
                         )
                     }
                 }
@@ -870,7 +1078,7 @@ private fun BanglaMovieCard(
                     Button(
                         onClick = onDownloadClick,
                         shape = RoundedCornerShape(6.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                        colors = ButtonDefaults.buttonColors(containerColor = BongoBrandRed),
                         contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                         modifier = Modifier
                             .weight(1.1f)
@@ -881,72 +1089,6 @@ private fun BanglaMovieCard(
                         Text("ডাউনলোড", fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
                     }
                 }
-            }
-        }
-    }
-}
-
-/**
- * Responsive Pagination Bar for Bangla OTT
- */
-@Composable
-private fun BanglaOttPaginationBar(
-    currentPage: Int,
-    totalPages: Int,
-    onPageChange: (Int) -> Unit
-) {
-    Surface(
-        color = CinemaSurface,
-        shape = RoundedCornerShape(12.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            FilledTonalButton(
-                onClick = { onPageChange(currentPage - 1) },
-                enabled = currentPage > 1,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = CinemaSurfaceVariant,
-                    contentColor = TextPrimary
-                ),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.height(32.dp)
-            ) {
-                Icon(Icons.Default.ChevronLeft, contentDescription = null, modifier = Modifier.size(14.dp))
-                Spacer(modifier = Modifier.width(2.dp))
-                Text("পূর্ববর্তী", fontSize = 11.sp)
-            }
-
-            Text(
-                text = "পৃষ্ঠা $currentPage / $totalPages",
-                color = TextSecondary,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            FilledTonalButton(
-                onClick = { onPageChange(currentPage + 1) },
-                enabled = currentPage < totalPages,
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.filledTonalButtonColors(
-                    containerColor = CinemaSurfaceVariant,
-                    contentColor = TextPrimary
-                ),
-                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                modifier = Modifier.height(32.dp)
-            ) {
-                Text("পরবর্তী", fontSize = 11.sp)
-                Spacer(modifier = Modifier.width(2.dp))
-                Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(14.dp))
             }
         }
     }

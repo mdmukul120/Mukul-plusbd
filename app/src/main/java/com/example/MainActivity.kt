@@ -622,6 +622,7 @@ fun MukulPlusApp() {
                     }
                     ScreenTab.BANGLA_OTT -> {
                         BanglaOttScreen(
+                            mediaRepository = mediaRepository,
                             onBack = { currentTab = ScreenTab.HOME },
                             onNavigateToDownloads = { currentTab = ScreenTab.EXTRACTOR }
                         )
