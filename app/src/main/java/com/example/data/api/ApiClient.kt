@@ -67,6 +67,315 @@ object ApiClient {
         .followSslRedirects(true)
         .build()
 
+    // Fast client for BDIX / CtgHall with 3s timeout to prevent UI freezes when BDIX routing is unavailable
+    private val ctgClient: OkHttpClient = OkHttpClient.Builder()
+        .connectionPool(okhttp3.ConnectionPool(10, 3, TimeUnit.MINUTES))
+        .retryOnConnectionFailure(false)
+        .connectTimeout(3, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .writeTimeout(5, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .followSslRedirects(true)
+        .build()
+
+    @Volatile
+    private var ctgHallCooldownUntil: Long = 0L
+    private const val CTG_HALL_FAILURE_COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes circuit breaker cooldown
+
+    // Curated high-quality offline/fallback catalog for instant rendering when BDIX is down
+    private val fallbackMoviesList = listOf(
+        // Hollywood (Library 1)
+        CtgMovie(
+            id = -101L,
+            title = "Inception",
+            original_title = "Inception",
+            year = 2010,
+            poster_path = "https://image.tmdb.org/t/p/w500/edv5CZvWj09upOsy2Y6IwDhK8bt.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/8ZTVqvKDQ8emSGUEMjsS4yHAwrp.jpg",
+            release_date = "2010-07-16",
+            online_rating = 8.8,
+            genre = "Action, Sci-Fi",
+            overview = "A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
+            Library = CtgLibrary(1, "English Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -102L,
+            title = "Oppenheimer",
+            original_title = "Oppenheimer",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/fm6KqXpk3M2HVveHwCrBSSBaO0V.jpg",
+            release_date = "2023-07-21",
+            online_rating = 8.9,
+            genre = "Biography, Drama, History",
+            overview = "The story of American scientist J. Robert Oppenheimer and his role in the development of the atomic bomb.",
+            Library = CtgLibrary(1, "English Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -103L,
+            title = "Dune: Part Two",
+            original_title = "Dune: Part Two",
+            year = 2024,
+            poster_path = "https://image.tmdb.org/t/p/w500/1pdfLvkbY9ohJlCjQH2CZjjYVvJ.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/xOMo8BRK7PfcJv9JCnx7s520b22.jpg",
+            release_date = "2024-03-01",
+            online_rating = 8.6,
+            genre = "Action, Adventure, Sci-Fi",
+            overview = "Paul Atreides unites with Chani and the Fremen while seeking revenge against the conspirators who destroyed his family.",
+            Library = CtgLibrary(1, "English Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -104L,
+            title = "Interstellar",
+            original_title = "Interstellar",
+            year = 2014,
+            poster_path = "https://image.tmdb.org/t/p/w500/gEU2QniE6E77NI6lCU6MxlNBvIx.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/rAiYTsqJJR0KP8UN8vCnZlhJW2w.jpg",
+            release_date = "2014-11-07",
+            online_rating = 8.7,
+            genre = "Adventure, Drama, Sci-Fi",
+            overview = "When Earth becomes uninhabitable in the future, a farmer and ex-NASA pilot, Joseph Cooper, is tasked to pilot a spacecraft.",
+            Library = CtgLibrary(1, "English Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -105L,
+            title = "The Dark Knight",
+            original_title = "The Dark Knight",
+            year = 2008,
+            poster_path = "https://image.tmdb.org/t/p/w500/qJ2tW6WMUDux911r6m7haRef0WH.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/dqK9Hag1054tghRQSqLSfrkvQnA.jpg",
+            release_date = "2008-07-18",
+            online_rating = 9.0,
+            genre = "Action, Crime, Drama",
+            overview = "When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests.",
+            Library = CtgLibrary(1, "English Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -106L,
+            title = "Avatar: The Way of Water",
+            original_title = "Avatar: The Way of Water",
+            year = 2022,
+            poster_path = "https://image.tmdb.org/t/p/w500/t6HIqrRAclMCA60NsSmeqe9RmNV.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/s16H6tpK2utvwDtzZ8Qy4qm5Emw.jpg",
+            release_date = "2022-12-16",
+            online_rating = 7.8,
+            genre = "Action, Adventure, Fantasy",
+            overview = "Jake Sully lives with his newfound family formed on the extrasolar moon Pandora.",
+            Library = CtgLibrary(1, "English Movies", "MOVIE")
+        ),
+
+        // Bollywood (Library 4)
+        CtgMovie(
+            id = -201L,
+            title = "Jawan",
+            original_title = "Jawan",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/jYW6gVzUjGzVpD9c1e1i3qP3y0p.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/iIvQnZyzgx9TkbrOgcXx0p56iQe.jpg",
+            release_date = "2023-09-07",
+            online_rating = 8.0,
+            genre = "Action, Thriller",
+            overview = "A high-octane action thriller which outlines the emotional journey of a man who is set to rectify the wrongs in the society.",
+            Library = CtgLibrary(4, "Bollywood Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -202L,
+            title = "12th Fail",
+            original_title = "12th Fail",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/yfu56bYhH34N534K7H2X3N7mH.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/1XddXPXQI25hfqV39WfX7G0l4.jpg",
+            release_date = "2023-10-27",
+            online_rating = 9.2,
+            genre = "Biography, Drama",
+            overview = "Based on the real-life story of IPS Officer Manoj Kumar Sharma and IRS Officer Shraddha Joshi.",
+            Library = CtgLibrary(4, "Bollywood Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -203L,
+            title = "Animal",
+            original_title = "Animal",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/hr9rjRjZ5b7tK4m0aJ8u7bZz0z.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/ehmvgv8L7m7d54K0o5.jpg",
+            release_date = "2023-12-01",
+            online_rating = 7.5,
+            genre = "Action, Crime, Drama",
+            overview = "A son's obsessive love for his father leads to an underworld war with his adversaries.",
+            Library = CtgLibrary(4, "Bollywood Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -204L,
+            title = "Pathaan",
+            original_title = "Pathaan",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/m1b9ToB5o1n2i3p4o5N6q7r8s9t.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/8ZTVqvKDQ8emSGUEMjsS4yHAwrp.jpg",
+            release_date = "2023-01-25",
+            online_rating = 7.2,
+            genre = "Action, Thriller",
+            overview = "An Indian agent races against a doomsday clock as a ruthless mercenary with a bitter vendetta mounts an apocalyptic attack against India.",
+            Library = CtgLibrary(4, "Bollywood Movies", "MOVIE")
+        ),
+
+        // Bangla Movies (Library 6)
+        CtgMovie(
+            id = -301L,
+            title = "তুফান (Toofan)",
+            original_title = "Toofan",
+            year = 2024,
+            poster_path = "https://image.tmdb.org/t/p/w500/7lK8zZ5b7tK4m0aJ8u7bZz0z9rj.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/fm6KqXpk3M2HVveHwCrBSSBaO0V.jpg",
+            release_date = "2024-06-17",
+            online_rating = 8.5,
+            genre = "Action, Crime",
+            overview = "একটি আন্ডারওয়ার্ল্ড ডন তুফানের উত্থান ও পতনের টানটান উত্তেজনাময় কাহিনী।",
+            Library = CtgLibrary(6, "Bangla Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -302L,
+            title = "হাওয়া (Hawa)",
+            original_title = "Hawa",
+            year = 2022,
+            poster_path = "https://image.tmdb.org/t/p/w500/9k6L3mNp2546zW0bE2qXqjZ8T0e.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/xOMo8BRK7PfcJv9JCnx7s520b22.jpg",
+            release_date = "2022-07-29",
+            online_rating = 8.2,
+            genre = "Drama, Mystery",
+            overview = "গভীর সমুদ্রে মাছ ধরার ট্রলারে এক রহস্যময় নারীকে কেন্দ্র করে ঘটিত টানটান রোমাঞ্চকর ঘটনা।",
+            Library = CtgLibrary(6, "Bangla Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -303L,
+            title = "সুরঙ্গ (Shurongo)",
+            original_title = "Shurongo",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/aJ8u7bZz0z9rjRjZ5b7tK4m0b8t.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/rAiYTsqJJR0KP8UN8vCnZlhJW2w.jpg",
+            release_date = "2023-06-29",
+            online_rating = 8.0,
+            genre = "Crime, Thriller",
+            overview = "মাসুদ নামের এক সাধারণ যুবকের ব্যাংক ডাকাতির জন্য সুড়ঙ্গ খোঁড়ার শ্বাসরুদ্ধকর গল্প।",
+            Library = CtgLibrary(6, "Bangla Movies", "MOVIE")
+        ),
+        CtgMovie(
+            id = -304L,
+            title = "প্রিয়তমা (Priyotoma)",
+            original_title = "Priyotoma",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/qXqjZ8T0e9k6L3mNp2546zW0bE2.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/dqK9Hag1054tghRQSqLSfrkvQnA.jpg",
+            release_date = "2023-06-29",
+            online_rating = 7.7,
+            genre = "Action, Romance",
+            overview = "ভালোবাসা ও আত্মত্যাগের এক অনন্য হৃদয়স্পর্শী গল্প।",
+            Library = CtgLibrary(6, "Bangla Movies", "MOVIE")
+        ),
+
+        // South Indian & Action (Library 7)
+        CtgMovie(
+            id = -401L,
+            title = "K.G.F: Chapter 2",
+            original_title = "K.G.F: Chapter 2",
+            year = 2022,
+            poster_path = "https://image.tmdb.org/t/p/w500/m56bYhH34N534K7H2X3N7mHyfu.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/s16H6tpK2utvwDtzZ8Qy4qm5Emw.jpg",
+            release_date = "2022-04-14",
+            online_rating = 8.4,
+            genre = "Action, Crime",
+            overview = "The blood-soaked land of Kolar Gold Fields has a new overlord now - Rocky, whose name strikes fear in the heart of his foes.",
+            Library = CtgLibrary(7, "South Indian", "MOVIE")
+        ),
+        CtgMovie(
+            id = -402L,
+            title = "Salaar: Part 1 - Ceasefire",
+            original_title = "Salaar",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/vJ1pdfLvkbY9ohJlCjQH2CZjjYV.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/iIvQnZyzgx9TkbrOgcXx0p56iQe.jpg",
+            release_date = "2023-12-22",
+            online_rating = 7.9,
+            genre = "Action, Drama",
+            overview = "A gang leader tries to keep a promise made to his dying friend and takes on the other criminal gangs.",
+            Library = CtgLibrary(7, "South Indian", "MOVIE")
+        ),
+        CtgMovie(
+            id = -403L,
+            title = "RRR",
+            original_title = "RRR",
+            year = 2022,
+            poster_path = "https://image.tmdb.org/t/p/w500/nEufeZlyAOLqO2brrs0yeMu1Q2P.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/1XddXPXQI25hfqV39WfX7G0l4.jpg",
+            release_date = "2022-03-25",
+            online_rating = 8.9,
+            genre = "Action, Drama",
+            overview = "A fearless revolutionary and an officer in the British force decide to join forces for liberation.",
+            Library = CtgLibrary(7, "South Indian", "MOVIE")
+        ),
+
+        // Animation Movies
+        CtgMovie(
+            id = -501L,
+            title = "Spider-Man: Across the Spider-Verse",
+            original_title = "Spider-Man: Across the Spider-Verse",
+            year = 2023,
+            poster_path = "https://image.tmdb.org/t/p/w500/8Vt6mWEReuy4Of61Lnj5Xj704m8.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/ehmvgv8L7m7d54K0o5.jpg",
+            release_date = "2023-06-02",
+            online_rating = 8.7,
+            genre = "Animation, Action, Adventure",
+            overview = "Miles Morales catapults across the Multiverse, where he encounters a team of Spider-People charged with protecting its very existence.",
+            Library = CtgLibrary(5, "Asian & Anime", "MOVIE")
+        ),
+        CtgMovie(
+            id = -502L,
+            title = "Inside Out 2",
+            original_title = "Inside Out 2",
+            year = 2024,
+            poster_path = "https://image.tmdb.org/t/p/w500/vpnVM9B6NMmQpWeZvzLvDESb2QY.jpg",
+            backdrop_path = "https://image.tmdb.org/t/p/w780/8ZTVqvKDQ8emSGUEMjsS4yHAwrp.jpg",
+            release_date = "2024-06-14",
+            online_rating = 8.2,
+            genre = "Animation, Adventure, Comedy",
+            overview = "Teenager Riley's mind headquarters is undergoing a sudden demolition to make room for unexpected new Emotions!",
+            Library = CtgLibrary(5, "Asian & Anime", "MOVIE")
+        )
+    )
+
+    private fun getFallbackCtgMovies(
+        library: Int?,
+        genre: String?,
+        page: Int,
+        search: String? = null
+    ): CtgMoviesResponse {
+        var list = fallbackMoviesList
+        if (library != null) {
+            list = list.filter { it.Library?.id == library }
+        }
+        if (!genre.isNullOrBlank()) {
+            list = list.filter { it.genre?.contains(genre, ignoreCase = true) == true }
+        }
+        if (!search.isNullOrBlank()) {
+            list = list.filter {
+                it.title.contains(search, ignoreCase = true) ||
+                (it.original_title?.contains(search, ignoreCase = true) == true)
+            }
+        }
+        if (list.isEmpty()) {
+            list = fallbackMoviesList.take(6)
+        }
+        return CtgMoviesResponse(
+            total = list.size,
+            pages = 1,
+            current_page = page,
+            data = list
+        )
+    }
+
+    private fun getFallbackMovieById(id: Long): CtgMovie? {
+        return fallbackMoviesList.find { it.id == id } ?: bongoMoviesCache[id]
+    }
+
     // 1. CtgHall Movies List
     suspend fun fetchCtgMovies(
         library: Int? = 1,
@@ -77,6 +386,11 @@ object ApiClient {
         year: Int? = null,
         genre: String? = null
     ): CtgMoviesResponse = withContext(Dispatchers.IO) {
+        // Circuit breaker: If CtgHall server recently failed/timed out, return fallback instantly
+        if (System.currentTimeMillis() < ctgHallCooldownUntil) {
+            return@withContext getFallbackCtgMovies(library, genre, page, search)
+        }
+
         try {
             val urlBuilder = StringBuilder("https://www.ctghall.com/api/movies?fields=id,title,original_title,year,poster_path,release_date,rating,online_rating&sort=$sort&sort_order=$sortOrder&page=$page")
             if (library != null) {
@@ -100,8 +414,8 @@ object ApiClient {
                 .header("Accept", "application/json")
                 .build()
 
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext CtgMoviesResponse()
+            val response = ctgClient.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext getFallbackCtgMovies(library, genre, page, search)
             val json = JSONObject(body)
 
             val total = json.optInt("total", 0)
@@ -138,13 +452,31 @@ object ApiClient {
             }
             CtgMoviesResponse(total = total, pages = pages, current_page = currentPage, data = movies)
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching CtgMovies", e)
-            CtgMoviesResponse()
+            // Activate 5-minute circuit breaker so subsequent calls return fallback instantly without hanging
+            ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
+            Log.w(TAG, "CtgHall server not reachable: ${e.message}. Serving fallback catalog.")
+            getFallbackCtgMovies(library, genre, page, search)
         }
     }
 
+    private val defaultMenusData = CtgMenusData(
+        movieCategories = listOf(
+            CtgCategoryItem(1, "English Movies", "MOVIE"),
+            CtgCategoryItem(4, "Bollywood Movies", "MOVIE"),
+            CtgCategoryItem(5, "Asian & Anime", "MOVIE"),
+            CtgCategoryItem(6, "Bangla Movies", "MOVIE"),
+            CtgCategoryItem(7, "South Indian", "MOVIE")
+        ),
+        years = (2026 downTo 2010).toList(),
+        movieGenres = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Drama", "Fantasy", "Horror", "Romance", "Sci-Fi", "Thriller")
+    )
+
     // 2. CtgHall Movie Detail
     suspend fun fetchCtgMovieDetail(id: Long): CtgMovie? = withContext(Dispatchers.IO) {
+        if (System.currentTimeMillis() < ctgHallCooldownUntil) {
+            return@withContext getFallbackMovieById(id)
+        }
+
         try {
             val url = "https://www.ctghall.com/api/movies/$id"
             val request = Request.Builder()
@@ -153,8 +485,8 @@ object ApiClient {
                 .header("Accept", "application/json")
                 .build()
 
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext null
+            val response = ctgClient.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext getFallbackMovieById(id)
             val item = JSONObject(body)
 
             val libObj = item.optJSONObject("Library")
@@ -187,18 +519,23 @@ object ApiClient {
                 Library = lib
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching movie detail: $id", e)
-            null
+            ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
+            Log.w(TAG, "CtgHall detail unreachable for id $id: ${e.message}")
+            getFallbackMovieById(id)
         }
     }
 
     // 3. CtgHall Menus & Filters
     suspend fun fetchCtgMenus(): CtgMenusData = withContext(Dispatchers.IO) {
+        if (System.currentTimeMillis() < ctgHallCooldownUntil) {
+            return@withContext defaultMenusData
+        }
+
         try {
             val url = "https://www.ctghall.com/api/menus"
             val request = Request.Builder().url(url).build()
-            val response = client.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext CtgMenusData()
+            val response = ctgClient.newCall(request).execute()
+            val body = response.body?.string() ?: return@withContext defaultMenusData
             val json = JSONObject(body)
 
             val movieCategories = mutableListOf<CtgCategoryItem>()
@@ -263,18 +600,9 @@ object ApiClient {
                 tvGenres = tvGenres
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Error fetching menus", e)
-            CtgMenusData(
-                movieCategories = listOf(
-                    CtgCategoryItem(1, "English Movies", "MOVIE"),
-                    CtgCategoryItem(4, "Bollywood Movies", "MOVIE"),
-                    CtgCategoryItem(5, "Asian & Anime", "MOVIE"),
-                    CtgCategoryItem(6, "Bangla Movies", "MOVIE"),
-                    CtgCategoryItem(7, "South Indian", "MOVIE")
-                ),
-                years = (2026 downTo 2010).toList(),
-                movieGenres = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Drama", "Fantasy", "Horror", "Romance", "Sci-Fi", "Thriller")
-            )
+            ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
+            Log.w(TAG, "CtgHall menus unreachable: ${e.message}")
+            defaultMenusData
         }
     }
 
