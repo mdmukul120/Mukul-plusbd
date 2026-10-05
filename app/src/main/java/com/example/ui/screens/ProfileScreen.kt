@@ -37,6 +37,7 @@ fun ProfileScreen(
     mediaRepository: MediaRepository,
     onSelectMovie: (Long) -> Unit,
     onLogout: () -> Unit,
+    onCheckForUpdates: (() -> Unit)? = null,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -361,6 +362,91 @@ fun ProfileScreen(
                         }
                         IconButton(onClick = { mediaRepository.toggleFavorite(movie.id) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Remove", tint = BrandRed, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                }
+            }
+        }
+
+        // App Version & In-App Update Section
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFF10B981).copy(alpha = 0.15f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.SystemUpdate,
+                                        contentDescription = null,
+                                        tint = Color(0xFF10B981),
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "অ্যাপ সংস্করণ ও আপডেট",
+                                    color = TextPrimary,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = "GitHub রিলিজ থেকে ইন-অ্যাপ অটো-আপডেট",
+                                    color = TextMuted,
+                                    fontSize = 10.5.sp
+                                )
+                            }
+                        }
+
+                        if (onCheckForUpdates != null) {
+                            FilledTonalButton(
+                                onClick = onCheckForUpdates,
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = CinemaSurfaceVariant,
+                                    contentColor = CyanAccent
+                                ),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp)
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("চেক করুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Surface(
+                        color = CinemaSurfaceVariant,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("স্বয়ংক্রিয় স্ক্যান সিডিউল:", color = TextSecondary, fontSize = 11.sp)
+                            Text("প্রতিদিন ৩ বার (৮ ঘণ্টা পরপর)", color = Color(0xFF10B981), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }

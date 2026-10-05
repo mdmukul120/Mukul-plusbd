@@ -48,6 +48,9 @@ import com.example.data.util.AppLanguage
 import com.example.data.util.LanguageManager
 import com.example.data.util.ThemeManager
 import com.example.data.util.ThemeMode
+import com.example.data.model.AppUpdateInfo
+import com.example.data.util.AppUpdateManager
+import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.FullMusicPlayerDialog
 import com.example.ui.components.MiniMusicPlayer
 import com.example.ui.components.MukulPlusLogo
@@ -112,8 +115,39 @@ fun MukulPlusApp() {
     var selectedMovieId by remember { mutableStateOf<Long?>(null) }
     var selectedExtractorPost by remember { mutableStateOf<ExtractorPost?>(null) }
     var selectedTvChannel by remember { mutableStateOf<TvChannel?>(null) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+
+    // In-App GitHub Releases Update State
+    var activeUpdateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
+    var showAppUpdateDialog by remember { mutableStateOf(false) }
+
+    // Automatic 3-times-a-day background update scanner (every 8 hours: 24h / 3 = 8h)
+    LaunchedEffect(Unit) {
+        // 1. Initial scan on app launch (checks if 8 hours passed or first launch)
+        try {
+            val update = AppUpdateManager.checkForUpdates(context, force = false)
+            if (update != null && update.isUpdateAvailable && !AppUpdateManager.isTagDismissed(context, update.tagName)) {
+                activeUpdateInfo = update
+                showAppUpdateDialog = true
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "Initial update scan failed", e)
+        }
+
+        // 2. Periodic background scan loop every 8 hours (3 times a day)
+        while (true) {
+            kotlinx.coroutines.delay(8 * 60 * 60 * 1000L)
+            try {
+                val update = AppUpdateManager.checkForUpdates(context, force = true)
+                if (update != null && update.isUpdateAvailable && !AppUpdateManager.isTagDismissed(context, update.tagName)) {
+                    activeUpdateInfo = update
+                    showAppUpdateDialog = true
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "Periodic update scan failed", e)
+            }
+        }
+    }
 
     val isPlayerFullScreen = VideoPlayerState.isFullScreen
 
@@ -418,7 +452,53 @@ fun MukulPlusApp() {
                         colors = drawerItemColors()
                     )
 
-                    // Note: Update button deleted per user request
+                    // App Update Navigation Item with live status badge
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = Color(0xFF10B981)) },
+                        label = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("অ্যাপ আপডেট", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                                if (activeUpdateInfo?.isUpdateAvailable == true) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = BrandRed
+                                    ) {
+                                        Text(
+                                            "NEW",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        selected = false,
+                        onClick = {
+                            coroutineScope.launch {
+                                drawerState.close()
+                                if (activeUpdateInfo != null && activeUpdateInfo!!.isUpdateAvailable) {
+                                    showAppUpdateDialog = true
+                                } else {
+                                    Toast.makeText(context, "GitHub রিলিজ স্ক্যান করা হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                    val update = AppUpdateManager.checkForUpdates(context, force = true)
+                                    if (update != null && update.isUpdateAvailable) {
+                                        activeUpdateInfo = update
+                                        showAppUpdateDialog = true
+                                    } else {
+                                        val (vName, _) = AppUpdateManager.getInstalledVersion(context)
+                                        Toast.makeText(context, "আপনার অ্যাপ্লিকেশনটি লেটেস্ট সংস্করণে আছে (v$vName)", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        },
+                        colors = drawerItemColors()
+                    )
 
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Person, contentDescription = null, tint = if (currentTab == ScreenTab.PROFILE) BrandRed else TextSecondary) },
@@ -663,6 +743,19 @@ fun MukulPlusApp() {
                             authRepository = authRepository,
                             mediaRepository = mediaRepository,
                             onSelectMovie = { id: Long -> selectedMovieId = id },
+                            onCheckForUpdates = {
+                                coroutineScope.launch {
+                                    Toast.makeText(context, "GitHub রিলিজ স্ক্যান করা হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                    val update = AppUpdateManager.checkForUpdates(context, force = true)
+                                    if (update != null && update.isUpdateAvailable) {
+                                        activeUpdateInfo = update
+                                        showAppUpdateDialog = true
+                                    } else {
+                                        val (vName, _) = AppUpdateManager.getInstalledVersion(context)
+                                        Toast.makeText(context, "আপনার অ্যাপ্লিকেশনটি লেটেস্ট সংস্করণে আছে (v$vName)", Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            },
                             onLogout = {
                                 coroutineScope.launch {
                                     authRepository.logout()
@@ -694,9 +787,12 @@ fun MukulPlusApp() {
         )
     }
 
-    // App Update Dialog
-    if (showUpdateDialog) {
-        AppUpdatesDialog(onDismiss = { showUpdateDialog = false })
+    // In-App GitHub Releases Update Dialog & APK Downloader/Installer
+    if (showAppUpdateDialog && activeUpdateInfo != null) {
+        AppUpdateDialog(
+            updateInfo = activeUpdateInfo!!,
+            onDismiss = { showAppUpdateDialog = false }
+        )
     }
 }
 
@@ -749,127 +845,6 @@ fun LanguageSelectionDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) {
                 Text("বন্ধ করুন (Close)", color = TextSecondary)
-            }
-        }
-    )
-}
-
-// -------------------------------------------------------------
-// APP UPDATES DIALOG (Firebase & GitHub Remote Updater)
-// -------------------------------------------------------------
-@Composable
-fun AppUpdatesDialog(onDismiss: () -> Unit) {
-    val context = LocalContext.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = CinemaSurface,
-        icon = {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(Color(0xFF10B981).copy(alpha = 0.15f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.SystemUpdate,
-                    contentDescription = null,
-                    tint = Color(0xFF10B981),
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-        },
-        title = {
-            Text(
-                text = "অটো-আপডেট ও রিমোট কনফিগ",
-                fontWeight = FontWeight.Bold,
-                fontSize = 17.sp,
-                color = Color.White
-            )
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Surface(
-                    color = CinemaSurfaceVariant,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("বর্তমান ভার্সন:", color = TextSecondary, fontSize = 12.sp)
-                            Surface(
-                                color = BrandRed.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Text(
-                                    "v1.2 (Build 2)",
-                                    color = BrandRedLight,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("ক্লাউড সার্ভিস:", color = TextSecondary, fontSize = 12.sp)
-                            Text("Firebase Remote Config", color = CyanAccent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("স্বয়ংক্রিয় CI/CD:", color = TextSecondary, fontSize = 12.sp)
-                            Text("GitHub Actions APK", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                        }
-                    }
-                }
-
-                Text(
-                    text = "ফায়ারবেস ও গিটহাব অ্যাকশনের মাধ্যমে অ্যাপে নতুন কোনো আপডেট আসলে তা স্বয়ংক্রিয়ভাবে ডাউনলোড ও আপডেট ইনস্টল করার নোটিফিকেশন আসবে।",
-                    fontSize = 12.sp,
-                    color = TextSecondary,
-                    lineHeight = 17.sp
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    try {
-                        val browserIntent = Intent(
-                            Intent.ACTION_VIEW,
-                            Uri.parse("https://github.com")
-                        )
-                        context.startActivity(browserIntent)
-                    } catch (_: Exception) {}
-                    onDismiss()
-                },
-                colors = ButtonDefaults.buttonColors(containerColor = AuthBrandPrimary),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("আপডেট চেক করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                colors = ButtonDefaults.textButtonColors(contentColor = TextSecondary)
-            ) {
-                Text("বন্ধ করুন", fontSize = 12.sp)
             }
         }
     )
