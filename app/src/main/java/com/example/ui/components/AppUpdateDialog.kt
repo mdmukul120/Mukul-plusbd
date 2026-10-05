@@ -1,17 +1,13 @@
 package com.example.ui.components
 
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,18 +15,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.model.AppUpdateInfo
-import com.example.data.model.UpdateDownloadProgress
 import com.example.data.util.AppUpdateManager
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
@@ -44,25 +37,13 @@ fun AppUpdateDialog(
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
 
     val downloadProgress by AppUpdateManager.downloadProgress.collectAsState()
     var downloadedFile by remember { mutableStateOf<File?>(null) }
     var needsInstallPermission by remember { mutableStateOf(!AppUpdateManager.canRequestPackageInstalls(context)) }
 
-    // Pulsing icon animation
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.95f,
-        targetValue = 1.05f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseScale"
-    )
-
     val (installedVersionName, _) = remember { AppUpdateManager.getInstalledVersion(context) }
+    val isMatched = updateInfo.isCurrentVersionMatched
 
     Dialog(
         onDismissRequest = {
@@ -77,14 +58,14 @@ fun AppUpdateDialog(
         )
     ) {
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(22.dp),
             color = CinemaSurface,
             border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
             tonalElevation = 8.dp,
             modifier = modifier
-                .fillMaxWidth(0.92f)
+                .fillMaxWidth(0.90f)
                 .wrapContentHeight()
-                .padding(vertical = 24.dp)
+                .padding(vertical = 20.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -92,161 +73,173 @@ fun AppUpdateDialog(
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Header with pulsing icon and badge
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+                // Header Icon
+                Surface(
+                    shape = CircleShape,
+                    color = if (isMatched) Color(0xFF10B981).copy(alpha = 0.15f) else AuthBrandPrimary.copy(alpha = 0.15f),
+                    modifier = Modifier.size(56.dp)
                 ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = AuthBrandPrimary.copy(alpha = 0.15f),
-                        modifier = Modifier.size(64.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.SystemUpdate,
-                                contentDescription = "Update",
-                                tint = AuthBrandPrimary,
-                                modifier = Modifier.size(36.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Title
-                Text(
-                    text = "নতুন আপডেট উপলব্ধ!",
-                    color = TextPrimary,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "Mukul plus ${updateInfo.tagName} পাওয়া গেছে",
-                    color = CyanAccent,
-                    fontSize = 13.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Version Comparison Row: Current vs New
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(CinemaSurfaceVariant, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column {
-                        Text("বর্তমান সংস্করণ", color = TextMuted, fontSize = 10.sp)
-                        Text(
-                            text = "v$installedVersionName",
-                            color = TextSecondary,
-                            fontSize = 12.5.sp,
-                            fontWeight = FontWeight.Medium
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = if (isMatched) Icons.Default.CheckCircle else Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = if (isMatched) Color(0xFF10B981) else AuthBrandPrimary,
+                            modifier = Modifier.size(32.dp)
                         )
                     }
-
-                    Icon(
-                        imageVector = Icons.Default.ArrowForward,
-                        contentDescription = null,
-                        tint = AuthBrandPrimary,
-                        modifier = Modifier.size(16.dp)
-                    )
-
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("নতুন সংস্করণ", color = TextMuted, fontSize = 10.sp)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = BrandRed
-                            ) {
-                                Text(
-                                    text = "LATEST",
-                                    color = Color.White,
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = updateInfo.tagName,
-                                color = Color.White,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // File size & date banner
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "সাইজ: ${updateInfo.getFormattedFileSize()}",
-                        color = TextMuted,
-                        fontSize = 11.sp
-                    )
-                    Text(
-                        text = "গিটহাব রিলিজ • দ্রুত ডাউনলোড",
-                        color = TextMuted,
-                        fontSize = 11.sp
-                    )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Release Notes Card (Scrollable)
+                // Title
                 Text(
-                    text = "📋 আপডেটের বিবরণ ও নতুন ফিচার:",
+                    text = if (isMatched) "অ্যাপ্লিকেশনটি কারেন্ট ভার্সনে রয়েছে" else "নতুন আপডেট উপলব্ধ!",
                     color = TextPrimary,
-                    fontSize = 12.5.sp,
+                    fontSize = 17.5.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp)
+                    textAlign = TextAlign.Center
                 )
 
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Version Info Card
                 Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = CinemaBackground,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 140.dp)
+                    color = CinemaSurfaceVariant,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("বর্তমান ভার্সন:", color = TextSecondary, fontSize = 12.sp)
+                            Text("v$installedVersionName", color = TextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("রিলিজ ভার্সন:", color = TextSecondary, fontSize = 12.sp)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isMatched) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = Color(0xFF10B981)
+                                    ) {
+                                        Text(
+                                            text = "MATCHED",
+                                            color = Color.White,
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                }
+                                Text("v${updateInfo.versionName}", color = if (isMatched) Color(0xFF10B981) else CyanAccent, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // ------------------------------------------------------------
+                // CASE 1: MATCHED (কারেন্ট ভার্সন ম্যাচ করেছে -> ডাউনলোড হবে না)
+                // ------------------------------------------------------------
+                if (isMatched) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color(0xFF10B981).copy(alpha = 0.12f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.35f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.Verified, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "আপনার অ্যাপটি রিলিজের সাথে ম্যাচ করেছে। নতুন কোনো ডাউনলোডের প্রয়োজন নেই।",
+                                color = TextPrimary,
+                                fontSize = 11.5.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.buttonColors(containerColor = AuthBrandPrimary),
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .verticalScroll(scrollState)
-                            .padding(10.dp)
+                            .height(44.dp)
                     ) {
-                        val cleanNotes = formatReleaseNotes(updateInfo.releaseNotes)
-                        Text(
-                            text = cleanNotes,
-                            color = TextSecondary,
-                            fontSize = 11.5.sp,
-                            lineHeight = 16.5.sp
-                        )
+                        Text("ঠিক আছে", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                    return@Column
+                }
+
+                // ------------------------------------------------------------
+                // CASE 2: NOT MATCHED (রিলিজ ম্যাচ করেনি -> ডাউনলোড ও ইনস্টল হবে)
+                // ------------------------------------------------------------
+                // Download file details & info only
+                Surface(
+                    color = CinemaBackground,
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("ডাউনলোড ফাইল:", color = TextMuted, fontSize = 11.5.sp)
+                            Text(updateInfo.apkFileName, color = TextPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("ফাইলের সাইজ:", color = TextMuted, fontSize = 11.5.sp)
+                            Text(updateInfo.getFormattedFileSize(), color = CyanAccent, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        if (updateInfo.releaseNotes.isNotBlank()) {
+                            HorizontalDivider(
+                                color = CinemaBorder,
+                                thickness = 0.5.dp,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                            Text("আপডেট তথ্য:", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = updateInfo.releaseNotes,
+                                color = TextSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // ------------------------------------------------------------
-                // Download Progress or Status Box
-                // ------------------------------------------------------------
+                // Progress Bar while downloading
                 if (downloadProgress.isDownloading) {
                     Column(
                         modifier = Modifier
@@ -260,7 +253,7 @@ fun AppUpdateDialog(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("অ্যাপ্লিকেশন ডাউনলোড হচ্ছে...", color = TextPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
+                            Text("ডাউনলোড হচ্ছে...", color = TextPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
                             Text(
                                 text = "${(downloadProgress.progress * 100).toInt()}%",
                                 color = AuthBrandPrimary,
@@ -286,12 +279,12 @@ fun AppUpdateDialog(
                         val downloadedMb = downloadProgress.bytesDownloaded / (1024.0 * 1024.0)
                         val totalMb = downloadProgress.totalBytes / (1024.0 * 1024.0)
                         Text(
-                            text = String.format("%.1f MB / %.1f MB", downloadedMb, if (totalMb > 0) totalMb else 28.9),
+                            text = String.format("%.1f MB / %.1f MB", downloadedMb, if (totalMb > 0) totalMb else 29.3),
                             color = TextMuted,
                             fontSize = 10.5.sp
                         )
                     }
-                    Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                 } else if (downloadProgress.isCompleted && downloadedFile != null) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
@@ -299,16 +292,16 @@ fun AppUpdateDialog(
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF10B981).copy(alpha = 0.4f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 14.dp)
+                            .padding(bottom = 12.dp)
                     ) {
                         Row(
                             modifier = Modifier.padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "ডাউনলোড সম্পন্ন! ইনস্টলেশন প্রক্রিয়া শুরু হচ্ছে...",
+                                text = "ডাউনলোড সম্পন্ন! ইনস্টল প্রক্রিয়া শুরু হচ্ছে...",
                                 color = Color(0xFF10B981),
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium
@@ -322,13 +315,13 @@ fun AppUpdateDialog(
                         border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed.copy(alpha = 0.4f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 14.dp)
+                            .padding(bottom = 12.dp)
                     ) {
                         Row(
                             modifier = Modifier.padding(10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.Error, contentDescription = null, tint = BrandRed, modifier = Modifier.size(20.dp))
+                            Icon(Icons.Default.Error, contentDescription = null, tint = BrandRed, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = downloadProgress.error ?: "ডাউনলোড ব্যর্থ হয়েছে",
@@ -339,7 +332,7 @@ fun AppUpdateDialog(
                     }
                 }
 
-                // Unknown source permission notice if needed
+                // Install permission setting notice if required
                 if (needsInstallPermission && (downloadProgress.isCompleted || downloadedFile != null)) {
                     Surface(
                         shape = RoundedCornerShape(10.dp),
@@ -347,18 +340,18 @@ fun AppUpdateDialog(
                         border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB020).copy(alpha = 0.4f)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 12.dp)
+                            .padding(bottom = 10.dp)
                     ) {
                         Column(modifier = Modifier.padding(10.dp)) {
                             Text(
-                                text = "⚠️ অ্যাপ আপডেট ইনস্টল করতে পারমিশন প্রয়োজন:",
+                                text = "অ্যাপ ইনস্টল পারমিশন প্রয়োজন:",
                                 color = Color(0xFFFFB020),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "সেটিংসে গিয়ে 'Install Unknown Apps' অপশনে এই অ্যাপের পারমিশন চালু করুন।",
+                                text = "সেটিংসে গিয়ে অ্যাপটি ইনস্টল করার পারমিশন চালু করুন।",
                                 color = TextSecondary,
                                 fontSize = 10.5.sp
                             )
@@ -368,21 +361,20 @@ fun AppUpdateDialog(
                                     AppUpdateManager.openInstallPermissionSettings(context)
                                     needsInstallPermission = false
                                 },
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(6.dp),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                modifier = Modifier.height(30.dp)
+                                modifier = Modifier.height(28.dp)
                             ) {
-                                Text("পারমিশন সেটিংস খুলুন", fontSize = 11.sp, color = Color(0xFFFFB020))
+                                Text("পারমিশন সেটিংস", fontSize = 11.sp, color = Color(0xFFFFB020))
                             }
                         }
                     }
                 }
 
                 // ------------------------------------------------------------
-                // Action Buttons
+                // Download and Install Buttons (Only when NOT matched)
                 // ------------------------------------------------------------
                 if (downloadProgress.isCompleted && downloadedFile != null) {
-                    // Ready to Install button
                     Button(
                         onClick = {
                             val success = AppUpdateManager.installApk(context, downloadedFile!!)
@@ -392,17 +384,16 @@ fun AppUpdateDialog(
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(46.dp)
+                            .height(44.dp)
                     ) {
-                        Icon(Icons.Default.DownloadDone, contentDescription = null)
+                        Icon(Icons.Default.DownloadDone, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("এখনই ইনস্টল করুন (Install Now)", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                        Text("এখনই ইনস্টল করুন", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 } else if (!downloadProgress.isDownloading) {
-                    // Primary Download & Update Button
                     Button(
                         onClick = {
                             coroutineScope.launch {
@@ -410,7 +401,6 @@ fun AppUpdateDialog(
                                 if (file != null && file.exists()) {
                                     downloadedFile = file
                                     needsInstallPermission = !AppUpdateManager.canRequestPackageInstalls(context)
-                                    // Automatically trigger install
                                     val installed = AppUpdateManager.installApk(context, file)
                                     if (!installed && needsInstallPermission) {
                                         AppUpdateManager.openInstallPermissionSettings(context)
@@ -419,71 +409,31 @@ fun AppUpdateDialog(
                             }
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = AuthBrandPrimary),
-                        shape = RoundedCornerShape(12.dp),
+                        shape = RoundedCornerShape(10.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(46.dp)
+                            .height(44.dp)
                     ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null)
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("ইন-অ্যাপ আপডেট শুরু করুন", fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+                        Text("ডাউনলোড ও আপডেট করুন", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                // Row: Dismiss / Later + GitHub Releases Browser Link
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                // Dismiss / Later Button
+                TextButton(
+                    onClick = {
+                        AppUpdateManager.dismissUpdateTag(context, updateInfo.tagName)
+                        onDismiss()
+                    },
+                    enabled = !downloadProgress.isDownloading,
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                 ) {
-                    // Later Button
-                    TextButton(
-                        onClick = {
-                            AppUpdateManager.dismissUpdateTag(context, updateInfo.tagName)
-                            onDismiss()
-                        },
-                        enabled = !downloadProgress.isDownloading,
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text("পরে মনে করিয়ে দিন", color = TextMuted, fontSize = 12.sp)
-                    }
-
-                    // Direct Browser Link to GitHub Releases
-                    TextButton(
-                        onClick = {
-                            try {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(updateInfo.htmlUrl))
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                Toast.makeText(context, "ব্রাউজার খোলা সম্ভব হয়নি", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Icon(Icons.Default.OpenInBrowser, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("GitHub রিলিজ", color = CyanAccent, fontSize = 12.sp)
-                    }
+                    Text("পরে মনে করিয়ে দিন", color = TextMuted, fontSize = 12.sp)
                 }
             }
         }
     }
-}
-
-/**
- * Format markdown release notes into clean displayable text
- */
-private fun formatReleaseNotes(notes: String): String {
-    if (notes.isBlank()) {
-        return "• পারফরম্যান্স উন্নত করা হয়েছে\n• লাইভ টিভি ও ভিডিও স্ট্রিমিং আপডেট\n• বাগ ফিক্স এবং স্টেবিলিটি বৃদ্ধি"
-    }
-
-    return notes
-        .replace(Regex("##+ *"), "📌 ")
-        .replace(Regex("\\[([^\\]]+)\\]\\([^\\)]+\\)"), "$1") // Strip markdown links to plain text
-        .replace("**", "")
-        .replace("`", "")
-        .trim()
 }

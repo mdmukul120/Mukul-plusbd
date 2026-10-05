@@ -32,12 +32,12 @@ object MovieUpdateNotificationManager {
             val ctgResponse = try {
                 ApiClient.fetchCtgMovies(page = 1, sort = "createdAt", sortOrder = "DESC")
             } catch (e: Exception) {
-                Log.w(TAG, "CtgHall fetchCtgMovies error: ${e.message}")
+                Log.d(TAG, "CtgHall fetchCtgMovies: ${e.message}")
                 null
             }
 
             val newlyAddedOtt = ottMovies.filter { it.slug !in seenSlugs && it.title.isNotBlank() }
-            val ctgList = ctgResponse?.data ?: emptyList()
+            val ctgList = (ctgResponse?.data ?: emptyList()).filter { it.id > 0 }
             val newlyAddedCtg = ctgList.filter {
                 val slug = "ctg_${it.id}"
                 slug !in seenSlugs && it.title.isNotBlank()

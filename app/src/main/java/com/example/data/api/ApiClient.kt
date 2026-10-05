@@ -67,20 +67,20 @@ object ApiClient {
         .followSslRedirects(true)
         .build()
 
-    // Fast client for BDIX / CtgHall with 3s timeout to prevent UI freezes when BDIX routing is unavailable
+    // Fast client for BDIX / CtgHall with short timeout to prevent UI freezes when BDIX routing is unavailable
     private val ctgClient: OkHttpClient = OkHttpClient.Builder()
-        .connectionPool(okhttp3.ConnectionPool(10, 3, TimeUnit.MINUTES))
+        .connectionPool(okhttp3.ConnectionPool(5, 2, TimeUnit.MINUTES))
         .retryOnConnectionFailure(false)
-        .connectTimeout(3, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .writeTimeout(5, TimeUnit.SECONDS)
+        .connectTimeout(1500, TimeUnit.MILLISECONDS)
+        .readTimeout(2000, TimeUnit.MILLISECONDS)
+        .writeTimeout(2000, TimeUnit.MILLISECONDS)
         .followRedirects(true)
         .followSslRedirects(true)
         .build()
 
     @Volatile
     private var ctgHallCooldownUntil: Long = 0L
-    private const val CTG_HALL_FAILURE_COOLDOWN_MS = 5 * 60 * 1000L // 5 minutes circuit breaker cooldown
+    private const val CTG_HALL_FAILURE_COOLDOWN_MS = 15 * 60 * 1000L // 15 minutes circuit breaker cooldown
 
     // Curated high-quality offline/fallback catalog for instant rendering when BDIX is down
     private val fallbackMoviesList = listOf(
@@ -452,9 +452,9 @@ object ApiClient {
             }
             CtgMoviesResponse(total = total, pages = pages, current_page = currentPage, data = movies)
         } catch (e: Exception) {
-            // Activate 5-minute circuit breaker so subsequent calls return fallback instantly without hanging
+            // Activate 15-minute circuit breaker so subsequent calls return fallback instantly without hanging
             ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
-            Log.w(TAG, "CtgHall server not reachable: ${e.message}. Serving fallback catalog.")
+            Log.d(TAG, "CtgHall server not reachable (${e.message}). Serving fallback catalog.")
             getFallbackCtgMovies(library, genre, page, search)
         }
     }
@@ -520,7 +520,7 @@ object ApiClient {
             )
         } catch (e: Exception) {
             ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
-            Log.w(TAG, "CtgHall detail unreachable for id $id: ${e.message}")
+            Log.d(TAG, "CtgHall detail unreachable for id $id (${e.message}). Serving fallback.")
             getFallbackMovieById(id)
         }
     }
@@ -601,7 +601,7 @@ object ApiClient {
             )
         } catch (e: Exception) {
             ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
-            Log.w(TAG, "CtgHall menus unreachable: ${e.message}")
+            Log.d(TAG, "CtgHall menus unreachable (${e.message}). Serving default menus.")
             defaultMenusData
         }
     }

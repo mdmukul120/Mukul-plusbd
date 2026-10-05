@@ -26,14 +26,13 @@ import java.util.concurrent.TimeUnit
 object AppUpdateManager {
     private const val TAG = "AppUpdateManager"
 
-    // Primary GitHub Releases endpoint and metadata
-    const val GITHUB_RELEASES_PAGE_URL = "https://github.com/mdmukul120/Mukul-plusbd/releases"
-    private const val GITHUB_API_LATEST_RELEASE = "https://api.github.com/repos/mdmukul120/Mukul-plusbd/releases/latest"
+    // GitHub Releases API endpoints for scanning updates
+    private const val RELEASES_API_LATEST = "https://api.github.com/repos/mdmukul120/Mukul-plusbd/releases/latest"
     private const val RELEASE_METADATA_JSON_URL = "https://github.com/mdmukul120/Mukul-plusbd/releases/latest/download/app-update.json"
     private const val DIRECT_LATEST_APK_URL = "https://github.com/mdmukul120/Mukul-plusbd/releases/latest/download/MukulPlus-latest.apk"
 
     // 3 times a day = every 8 hours (24 / 3 = 8)
-    private const val SCAN_INTERVAL_MS = 8 * 60 * 60 * 1000L // 8 hours in milliseconds
+    private const val SCAN_INTERVAL_MS = 8 * 60 * 60 * 1000L
     private const val PREFS_NAME = "mukul_app_update_prefs"
     private const val KEY_LAST_SCAN_TIME = "last_scan_time"
     private const val KEY_LAST_SEEN_TAG = "last_seen_tag"
@@ -41,8 +40,8 @@ object AppUpdateManager {
 
     private val httpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(25, TimeUnit.SECONDS)
             .followRedirects(true)
             .followSslRedirects(true)
             .build()
@@ -75,7 +74,53 @@ object AppUpdateManager {
     }
 
     /**
-     * Checks if 8 hours (3 times a day) have elapsed since the last scan
+     * Checks if current installed version matches the release version.
+     * If matched, returns true (no update needed, download disabled).
+     */
+    fun isVersionMatched(
+        remoteVersionName: String,
+        remoteVersionCode: Int,
+        installedVersionName: String,
+        installedVersionCode: Int
+    ): Boolean {
+        val cleanRemote = remoteVersionName.replace("v", "", ignoreCase = true).trim()
+        val cleanInstalled = installedVersionName.replace("v", "", ignoreCase = true).trim()
+
+        if (cleanRemote.equals(cleanInstalled, ignoreCase = true)) {
+            return true
+        }
+
+        if (remoteVersionCode > 0 && installedVersionCode > 0) {
+            if (installedVersionCode >= remoteVersionCode) {
+                return true
+            }
+        }
+
+        // Semantic check: if installed version is >= remote version, it is matched
+        if (compareVersionStrings(cleanInstalled, cleanRemote) >= 0) {
+            return true
+        }
+
+        return false
+    }
+
+    private fun compareVersionStrings(v1: String, v2: String): Int {
+        val parts1 = v1.replace("v", "").replace("V", "").split(".").mapNotNull { it.toIntOrNull() }
+        val parts2 = v2.replace("v", "").replace("V", "").split(".").mapNotNull { it.toIntOrNull() }
+
+        val maxLen = maxOf(parts1.size, parts2.size)
+        for (i in 0 until maxLen) {
+            val num1 = parts1.getOrElse(i) { 0 }
+            val num2 = parts2.getOrElse(i) { 0 }
+            if (num1 != num2) {
+                return num1.compareTo(num2)
+            }
+        }
+        return 0
+    }
+
+    /**
+     * Checks if 8 hours have elapsed since the last scan (3 times a day)
      */
     fun isDueForPeriodicScan(context: Context): Boolean {
         val lastScan = getPrefs(context).getLong(KEY_LAST_SCAN_TIME, 0L)
@@ -83,45 +128,35 @@ object AppUpdateManager {
         return (now - lastScan) >= SCAN_INTERVAL_MS
     }
 
-    /**
-     * Records that a scan was performed right now
-     */
     fun recordScanTime(context: Context) {
         getPrefs(context).edit().putLong(KEY_LAST_SCAN_TIME, System.currentTimeMillis()).apply()
     }
 
-    /**
-     * Mark a specific release tag as dismissed by the user
-     */
     fun dismissUpdateTag(context: Context, tag: String) {
         getPrefs(context).edit().putString(KEY_DISMISSED_TAG, tag).apply()
     }
 
-    /**
-     * Check if a specific release tag was dismissed by the user
-     */
     fun isTagDismissed(context: Context, tag: String): Boolean {
         val dismissed = getPrefs(context).getString(KEY_DISMISSED_TAG, null)
         return dismissed != null && dismissed == tag
     }
 
     /**
-     * Check for updates on GitHub releases.
-     * @param force If true, bypasses the 8-hour periodic limit and force scans.
+     * Scan the releases endpoint and match with current app version.
+     * @param force If true, bypasses the 8-hour interval check (used for manual checks).
      */
     suspend fun checkForUpdates(context: Context, force: Boolean = false): AppUpdateInfo? = withContext(Dispatchers.IO) {
         val (installedVersionName, installedVersionCode) = getInstalledVersion(context)
 
         if (!force && !isDueForPeriodicScan(context)) {
-            // Not yet 8 hours since last scan, skip automatic network scan
             return@withContext null
         }
 
         try {
-            // 1. Try parsing primary GitHub API
-            var updateInfo = fetchFromGitHubApi(installedVersionName, installedVersionCode)
+            // 1. Try parsing primary release API
+            var updateInfo = fetchFromReleasesApi(installedVersionName, installedVersionCode)
 
-            // 2. If GitHub API failed or rate-limited, try the direct app-update.json asset
+            // 2. Fallback to direct app-update.json metadata
             if (updateInfo == null) {
                 updateInfo = fetchFromUpdateJson(installedVersionName, installedVersionCode)
             }
@@ -132,46 +167,37 @@ object AppUpdateManager {
                 return@withContext updateInfo
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking for updates", e)
+            Log.w(TAG, "Update check network issue: ${e.message}")
         }
 
         null
     }
 
-    /**
-     * Fetch latest release from GitHub API
-     */
-    private fun fetchFromGitHubApi(installedVersionName: String, installedVersionCode: Int): AppUpdateInfo? {
+    private fun fetchFromReleasesApi(installedVersionName: String, installedVersionCode: Int): AppUpdateInfo? {
         try {
             val request = Request.Builder()
-                .url(GITHUB_API_LATEST_RELEASE)
+                .url(RELEASES_API_LATEST)
                 .header("Accept", "application/vnd.github.v3+json")
                 .header("User-Agent", "MukulPlusApp-Updater")
                 .build()
 
             val response = httpClient.newCall(request).execute()
-            if (!response.isSuccessful) {
-                Log.w(TAG, "GitHub API returned code ${response.code}")
-                return null
-            }
+            if (!response.isSuccessful) return null
 
             val body = response.body?.string() ?: return null
             val json = JSONObject(body)
 
             val tagName = json.optString("tag_name", "")
             val title = json.optString("name", "Mukul plus $tagName")
-            val releaseNotes = json.optString("body", "")
+            val rawReleaseNotes = json.optString("body", "")
             val publishedAt = json.optString("published_at", "")
-            val htmlUrl = json.optString("html_url", GITHUB_RELEASES_PAGE_URL)
 
-            // Parse APK asset from assets array
             var downloadUrl = ""
             var apkFileName = "MukulPlus-latest.apk"
             var fileSizeBytes = 0L
 
             val assets = json.optJSONArray("assets")
             if (assets != null) {
-                // Priority 1: MukulPlus-latest.apk or specific version apk
                 for (i in 0 until assets.length()) {
                     val asset = assets.optJSONObject(i) ?: continue
                     val name = asset.optString("name", "")
@@ -179,9 +205,7 @@ object AppUpdateManager {
                         downloadUrl = asset.optString("browser_download_url", "")
                         apkFileName = name
                         fileSizeBytes = asset.optLong("size", 0L)
-                        if (name.contains("latest", ignoreCase = true)) {
-                            break
-                        }
+                        if (name.contains("latest", ignoreCase = true)) break
                     }
                 }
             }
@@ -190,39 +214,39 @@ object AppUpdateManager {
                 downloadUrl = DIRECT_LATEST_APK_URL
             }
 
-            // Extract remote version code and name from tag
             val (remoteVersionName, remoteVersionCode) = parseVersionFromTag(tagName, title)
 
-            val isAvailable = isRemoteNewer(
+            // Match release version with current installed version
+            val isMatched = isVersionMatched(
                 remoteVersionName = remoteVersionName,
                 remoteVersionCode = remoteVersionCode,
                 installedVersionName = installedVersionName,
                 installedVersionCode = installedVersionCode
             )
 
+            // If matched, isUpdateAvailable is false (no download). If not matched, update is available.
+            val isAvailable = !isMatched
+
             return AppUpdateInfo(
                 versionCode = remoteVersionCode,
                 versionName = remoteVersionName,
                 tagName = tagName,
                 title = title,
-                releaseNotes = releaseNotes,
+                releaseNotes = sanitizeReleaseNotes(rawReleaseNotes),
                 downloadUrl = downloadUrl,
                 fallbackDownloadUrl = DIRECT_LATEST_APK_URL,
                 apkFileName = apkFileName,
-                fileSizeBytes = fileSizeBytes,
+                fileSizeBytes = if (fileSizeBytes > 0L) fileSizeBytes else 30293657L,
                 publishedAt = publishedAt,
-                htmlUrl = htmlUrl,
-                isUpdateAvailable = isAvailable
+                isUpdateAvailable = isAvailable,
+                isCurrentVersionMatched = isMatched
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse GitHub API release", e)
+            Log.w(TAG, "Failed to parse releases api: ${e.message}")
             return null
         }
     }
 
-    /**
-     * Fallback: Fetch directly from app-update.json published with the release
-     */
     private fun fetchFromUpdateJson(installedVersionName: String, installedVersionCode: Int): AppUpdateInfo? {
         try {
             val request = Request.Builder()
@@ -242,71 +266,66 @@ object AppUpdateManager {
             val apkName = json.optString("apk_name", "MukulPlus-latest.apk")
             val downloadUrl = json.optString("download_url", DIRECT_LATEST_APK_URL)
             val publishedAt = json.optString("published_at", "")
-            val releaseUrl = json.optString("release_url", GITHUB_RELEASES_PAGE_URL)
 
-            val isAvailable = isRemoteNewer(
+            val isMatched = isVersionMatched(
                 remoteVersionName = versionName,
                 remoteVersionCode = versionCode,
                 installedVersionName = installedVersionName,
                 installedVersionCode = installedVersionCode
             )
+            val isAvailable = !isMatched
 
             return AppUpdateInfo(
                 versionCode = versionCode,
                 versionName = versionName,
                 tagName = tagName,
                 title = "Mukul plus $tagName",
-                releaseNotes = "## 🎬 Mukul plus স্বয়ংক্রিয় অ্যাপ আপডেট ($tagName)\n\n" +
-                        "• লাইভ BDIX TV ও স্পোর্টস চ্যানেলের উন্নত স্ট্রিমিং\n" +
-                        "• বাংলা ওটিটি ও Bongo বিডি নাটক ও সিনেমা ক্যাটালগ\n" +
-                        "• ইন-অ্যাপ অটোমেটিক আপডেট সিস্টেম\n" +
-                        "• পারফরম্যান্স ও বাফারহীন ভিডিও প্লেব্যাক",
+                releaseNotes = "• লাইভ টিভি ও ওটিটি স্ট্রিমিং অভিজ্ঞতা উন্নত করা হয়েছে\n• দ্রুত বাফারলেস প্লেব্যাক\n• বাগ ফিক্স এবং সিস্টেম স্টেবিলিটি বৃদ্ধি",
                 downloadUrl = downloadUrl,
                 fallbackDownloadUrl = DIRECT_LATEST_APK_URL,
                 apkFileName = apkName,
                 fileSizeBytes = 30293657L,
                 publishedAt = publishedAt,
-                htmlUrl = releaseUrl,
-                isUpdateAvailable = isAvailable
+                isUpdateAvailable = isAvailable,
+                isCurrentVersionMatched = isMatched
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse app-update.json fallback", e)
+            Log.w(TAG, "Failed to parse app-update.json fallback: ${e.message}")
             return null
         }
     }
 
     /**
-     * Determines whether the remote version is newer than the currently installed version
+     * Sanitizes release notes by removing all GitHub repo links, workflows, commits, and URLs.
+     * Retains ONLY clean bullet points describing the actual features.
      */
-    fun isRemoteNewer(
-        remoteVersionName: String,
-        remoteVersionCode: Int,
-        installedVersionName: String,
-        installedVersionCode: Int
-    ): Boolean {
-        // Compare versionCode first if valid
-        if (remoteVersionCode > 0 && installedVersionCode > 0) {
-            if (remoteVersionCode > installedVersionCode) return true
-            if (remoteVersionCode < installedVersionCode) return false
-        }
-
-        // Fallback: Semantic version comparison (e.g. 1.0.23 vs 1.0)
-        return compareVersionStrings(remoteVersionName, installedVersionName) > 0
-    }
-
-    private fun compareVersionStrings(v1: String, v2: String): Int {
-        val parts1 = v1.replace("v", "").replace("V", "").split(".").mapNotNull { it.toIntOrNull() }
-        val parts2 = v2.replace("v", "").replace("V", "").split(".").mapNotNull { it.toIntOrNull() }
-
-        val maxLen = maxOf(parts1.size, parts2.size)
-        for (i in 0 until maxLen) {
-            val num1 = parts1.getOrElse(i) { 0 }
-            val num2 = parts2.getOrElse(i) { 0 }
-            if (num1 != num2) {
-                return num1.compareTo(num2)
+    private fun sanitizeReleaseNotes(notes: String): String {
+        val cleanList = notes
+            .lines()
+            .map { it.trim() }
+            .filter { line ->
+                val l = line.lowercase()
+                !l.contains("github") && !l.contains("workflow") && !l.contains("commit") &&
+                !l.contains("compare/") && !l.contains("actions") && !l.contains("sha") &&
+                !l.contains("package name") && !l.contains("build number") && !l.contains("http://") &&
+                !l.contains("https://") && !l.startsWith("##") && !l.startsWith("###") &&
+                line.isNotBlank()
             }
+            .map { line ->
+                var l = line.replace("**", "").replace("`", "").trim()
+                if (!l.startsWith("•") && !l.startsWith("-")) {
+                    l = "• $l"
+                } else if (l.startsWith("-")) {
+                    l = "• " + l.substring(1).trim()
+                }
+                l
+            }
+
+        return if (cleanList.isNotEmpty()) {
+            cleanList.take(4).joinToString("\n")
+        } else {
+            "• লাইভ টিভি ও ওটিটি স্ট্রিমিং অভিজ্ঞতা উন্নত করা হয়েছে\n• দ্রুত বাফারলেস প্লেব্যাক\n• বাগ ফিক্স এবং সিস্টেম স্টেবিলিটি বৃদ্ধি"
         }
-        return 0
     }
 
     private fun parseVersionFromTag(tagName: String, title: String): Pair<String, Int> {
@@ -320,13 +339,20 @@ object AppUpdateManager {
     }
 
     /**
-     * Downloads the APK file directly inside the application with streaming progress.
+     * Downloads APK directly inside application with streaming progress.
+     * If version is matched (current version), download is prevented.
      */
     suspend fun downloadApk(
         context: Context,
         updateInfo: AppUpdateInfo,
         onProgressUpdate: (UpdateDownloadProgress) -> Unit = {}
     ): File? = withContext(Dispatchers.IO) {
+        // Enforce rule: if version is matched, do NOT download
+        if (updateInfo.isCurrentVersionMatched) {
+            Log.w(TAG, "Download rejected: Current version matches release version.")
+            return@withContext null
+        }
+
         _downloadProgress.value = UpdateDownloadProgress(isDownloading = true)
         onProgressUpdate(_downloadProgress.value)
 
@@ -348,17 +374,13 @@ object AppUpdateManager {
 
         for (downloadUrl in urlsToTry) {
             try {
-                Log.d(TAG, "Starting APK download from: $downloadUrl")
                 val request = Request.Builder()
                     .url(downloadUrl)
                     .header("User-Agent", "MukulPlusApp-Downloader")
                     .build()
 
                 val response = httpClient.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    Log.w(TAG, "Download attempt failed with HTTP ${response.code} from $downloadUrl")
-                    continue
-                }
+                if (!response.isSuccessful) continue
 
                 val body = response.body ?: continue
                 val totalBytes = if (body.contentLength() > 0) body.contentLength() else updateInfo.fileSizeBytes
@@ -407,10 +429,9 @@ object AppUpdateManager {
                 _downloadProgress.value = completedProgress
                 onProgressUpdate(completedProgress)
 
-                Log.d(TAG, "APK successfully downloaded to ${apkFile.absolutePath} ($downloadedBytes bytes)")
                 return@withContext apkFile
             } catch (e: Exception) {
-                Log.e(TAG, "Error downloading APK from $downloadUrl", e)
+                Log.w(TAG, "Download attempt error: ${e.message}")
             }
         }
 
@@ -424,9 +445,6 @@ object AppUpdateManager {
         null
     }
 
-    /**
-     * Checks if the app has permission to install unknown apps (Android 8.0+)
-     */
     fun canRequestPackageInstalls(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.packageManager.canRequestPackageInstalls()
@@ -435,9 +453,6 @@ object AppUpdateManager {
         }
     }
 
-    /**
-     * Opens the system settings screen where the user can grant permission to install unknown apps.
-     */
     fun openInstallPermissionSettings(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
@@ -447,19 +462,13 @@ object AppUpdateManager {
                 }
                 context.startActivity(intent)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to open install permission settings", e)
+                Log.w(TAG, "Failed to open settings: ${e.message}")
             }
         }
     }
 
-    /**
-     * Triggers the Android PackageInstaller using FileProvider
-     */
     fun installApk(context: Context, apkFile: File): Boolean {
-        if (!apkFile.exists()) {
-            Log.e(TAG, "APK file does not exist at ${apkFile.absolutePath}")
-            return false
-        }
+        if (!apkFile.exists()) return false
 
         return try {
             val apkUri = FileProvider.getUriForFile(
@@ -477,14 +486,11 @@ object AppUpdateManager {
             context.startActivity(intent)
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Error starting APK installer", e)
+            Log.w(TAG, "Failed to launch installer: ${e.message}")
             false
         }
     }
 
-    /**
-     * Reset download progress state
-     */
     fun resetProgress() {
         _downloadProgress.value = UpdateDownloadProgress()
     }

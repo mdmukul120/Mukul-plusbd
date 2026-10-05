@@ -482,18 +482,14 @@ fun MukulPlusApp() {
                         onClick = {
                             coroutineScope.launch {
                                 drawerState.close()
-                                if (activeUpdateInfo != null && activeUpdateInfo!!.isUpdateAvailable) {
+                                Toast.makeText(context, "আপডেট স্ক্যান করা হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                val update = AppUpdateManager.checkForUpdates(context, force = true)
+                                if (update != null) {
+                                    activeUpdateInfo = update
                                     showAppUpdateDialog = true
                                 } else {
-                                    Toast.makeText(context, "GitHub রিলিজ স্ক্যান করা হচ্ছে...", Toast.LENGTH_SHORT).show()
-                                    val update = AppUpdateManager.checkForUpdates(context, force = true)
-                                    if (update != null && update.isUpdateAvailable) {
-                                        activeUpdateInfo = update
-                                        showAppUpdateDialog = true
-                                    } else {
-                                        val (vName, _) = AppUpdateManager.getInstalledVersion(context)
-                                        Toast.makeText(context, "আপনার অ্যাপ্লিকেশনটি লেটেস্ট সংস্করণে আছে (v$vName)", Toast.LENGTH_LONG).show()
-                                    }
+                                    val (vName, _) = AppUpdateManager.getInstalledVersion(context)
+                                    Toast.makeText(context, "আপনার অ্যাপ্লিকেশনটি কারেন্ট ভার্সনে রয়েছে (v$vName)", Toast.LENGTH_SHORT).show()
                                 }
                             }
                         },
@@ -745,14 +741,14 @@ fun MukulPlusApp() {
                             onSelectMovie = { id: Long -> selectedMovieId = id },
                             onCheckForUpdates = {
                                 coroutineScope.launch {
-                                    Toast.makeText(context, "GitHub রিলিজ স্ক্যান করা হচ্ছে...", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "আপডেট স্ক্যান করা হচ্ছে...", Toast.LENGTH_SHORT).show()
                                     val update = AppUpdateManager.checkForUpdates(context, force = true)
-                                    if (update != null && update.isUpdateAvailable) {
+                                    if (update != null) {
                                         activeUpdateInfo = update
                                         showAppUpdateDialog = true
                                     } else {
                                         val (vName, _) = AppUpdateManager.getInstalledVersion(context)
-                                        Toast.makeText(context, "আপনার অ্যাপ্লিকেশনটি লেটেস্ট সংস্করণে আছে (v$vName)", Toast.LENGTH_LONG).show()
+                                        Toast.makeText(context, "আপনার অ্যাপ্লিকেশনটি কারেন্ট ভার্সনে রয়েছে (v$vName)", Toast.LENGTH_SHORT).show()
                                     }
                                 }
                             },

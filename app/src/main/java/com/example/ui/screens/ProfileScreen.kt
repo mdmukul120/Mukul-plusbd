@@ -406,7 +406,7 @@ fun ProfileScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = "GitHub রিলিজ থেকে ইন-অ্যাপ অটো-আপডেট",
+                                    text = "ইন-অ্যাপ অটো-আপডেট সিস্টেম",
                                     color = TextMuted,
                                     fontSize = 10.5.sp
                                 )

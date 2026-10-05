@@ -11,11 +11,11 @@ data class AppUpdateInfo(
     val apkFileName: String = "MukulPlus-latest.apk",
     val fileSizeBytes: Long = 0L,
     val publishedAt: String = "",
-    val htmlUrl: String = "https://github.com/mdmukul120/Mukul-plusbd/releases",
-    val isUpdateAvailable: Boolean = false
+    val isUpdateAvailable: Boolean = false,
+    val isCurrentVersionMatched: Boolean = false
 ) {
     fun getFormattedFileSize(): String {
-        if (fileSizeBytes <= 0L) return "প্রায় ২৯ এমবি"
+        if (fileSizeBytes <= 0L) return "২৯.৩ MB"
         val mb = fileSizeBytes / (1024.0 * 1024.0)
         return String.format("%.1f MB", mb)
     }
