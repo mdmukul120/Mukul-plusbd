@@ -59,3 +59,14 @@ data class BanglaMoviesResponse(
     val totalPages: Int,
     val movies: List<BanglaMovie>
 )
+
+data class ScrapedVideoLink(
+    val playUrl: String,
+    val downloadUrl: String,
+    val serverName: String,
+    val quality: String,
+    val fileSize: String = "",
+    val isDirectVideo: Boolean = false,
+    val requiresBrowser: Boolean = false,
+    val sourceDomain: String = ""
+)

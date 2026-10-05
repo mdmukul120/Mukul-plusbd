@@ -1,7 +1,15 @@
 package com.example.ui.screens
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,6 +42,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.data.api.WeatherApiClient
 import com.example.data.model.*
 import com.example.ui.theme.*
@@ -53,6 +62,16 @@ fun WeatherScreen(
     var weatherReport by remember { mutableStateOf<CurrentWeatherReport?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isCelsius by remember { mutableStateOf(true) }
+
+    // GPS & Location Permission State
+    var isLocatingGps by remember { mutableStateOf(false) }
+    var locationPermissionGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var currentGpsLocation by remember { mutableStateOf<WeatherLocation?>(null) }
 
     // Search state
     var searchQuery by remember { mutableStateOf("") }
@@ -77,8 +96,87 @@ fun WeatherScreen(
         }
     }
 
-    LaunchedEffect(selectedLocation) {
-        loadWeather(selectedLocation)
+    fun fetchDeviceLocationWeather() {
+        val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+        if (lm == null) {
+            Toast.makeText(context, "লোকেশন সার্ভিস পাওয়া যায়নি", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        isLocatingGps = true
+        coroutineScope.launch {
+            try {
+                var bestLoc: Location? = null
+                try {
+                    val gps = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER)
+                    val net = lm.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
+                    val passive = lm.getLastKnownLocation(LocationManager.PASSIVE_PROVIDER)
+                    bestLoc = gps ?: net ?: passive
+                } catch (_: SecurityException) {}
+
+                if (bestLoc != null) {
+                    val locObj = WeatherApiClient.reverseGeocode(context, bestLoc.latitude, bestLoc.longitude)
+                    currentGpsLocation = locObj
+                    selectedLocation = locObj
+                    loadWeather(locObj)
+                    Toast.makeText(context, "বর্তমান অবস্থান: ${locObj.nameBangla}", Toast.LENGTH_SHORT).show()
+                } else {
+                    loadWeather(selectedLocation)
+                }
+            } catch (e: Exception) {
+                Log.e("WeatherScreen", "Location error: ${e.message}")
+            } finally {
+                isLocatingGps = false
+            }
+        }
+    }
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        locationPermissionGranted = fineGranted || coarseGranted
+
+        if (locationPermissionGranted) {
+            fetchDeviceLocationWeather()
+        } else {
+            Toast.makeText(context, "লোকেশন পারমিশন ছাড়া ঢাকার আবহাওয়া দেখানো হচ্ছে", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun requestGpsLocationWeather() {
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) {
+            locationPermissionGranted = true
+            fetchDeviceLocationWeather()
+        } else {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    // On initial launch, request permission and load weather for device's current location
+    LaunchedEffect(Unit) {
+        val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fine || coarse) {
+            locationPermissionGranted = true
+            fetchDeviceLocationWeather()
+        } else {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+            loadWeather(selectedLocation)
+        }
     }
 
     Scaffold(
@@ -176,6 +274,27 @@ fun WeatherScreen(
 
                     Spacer(modifier = Modifier.width(4.dp))
 
+                    // GPS Current Location button
+                    IconButton(
+                        onClick = { requestGpsLocationWeather() },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        if (isLocatingGps) {
+                            CircularProgressIndicator(
+                                color = Color(0xFFFFB020),
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.MyLocation,
+                                contentDescription = "Current Location",
+                                tint = if (locationPermissionGranted) Color(0xFFFFB020) else TextMuted,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
                     // Search button
                     IconButton(
                         onClick = { showSearchSheet = true },
@@ -191,7 +310,13 @@ fun WeatherScreen(
 
                     // Refresh button
                     IconButton(
-                        onClick = { loadWeather(selectedLocation) },
+                        onClick = {
+                            if (currentGpsLocation != null && selectedLocation.nameBangla == currentGpsLocation?.nameBangla) {
+                                fetchDeviceLocationWeather()
+                            } else {
+                                loadWeather(selectedLocation)
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(
@@ -232,11 +357,91 @@ fun WeatherScreen(
                         contentPadding = PaddingValues(bottom = 120.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // 1. Division / City Quick Chips
+                        // Location Permission Alert Banner if permission not granted
+                        if (!locationPermissionGranted) {
+                            item {
+                                Card(
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB020).copy(alpha = 0.45f)),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 2.dp)
+                                        .clickable { requestGpsLocationWeather() }
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    listOf(
+                                                        Color(0xFF2C3E50).copy(alpha = 0.5f),
+                                                        CinemaSurface
+                                                    )
+                                                )
+                                            )
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = Color(0xFFFFB020).copy(alpha = 0.2f),
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.LocationOff,
+                                                        contentDescription = null,
+                                                        tint = Color(0xFFFFB020),
+                                                        modifier = Modifier.size(17.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Column {
+                                                Text(
+                                                    text = "কারেন্ট লোকেশনের আবহাওয়া দেখতে চান?",
+                                                    color = TextPrimary,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = "অনুমতি দিলে আপনার সঠিক এলাকার পূর্বাভাস পাবেন",
+                                                    color = TextMuted,
+                                                    fontSize = 10.sp
+                                                )
+                                            }
+                                        }
+                                        FilledTonalButton(
+                                            onClick = { requestGpsLocationWeather() },
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.filledTonalButtonColors(
+                                                containerColor = Color(0xFFFFB020).copy(alpha = 0.25f),
+                                                contentColor = Color(0xFFFFB020)
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp)
+                                        ) {
+                                            Text("অনুমতি দিন", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 1. Division / City Quick Chips (with current GPS location first)
                         item {
                             CitySelectionRow(
                                 locations = WeatherApiClient.defaultLocations,
+                                currentGpsLocation = currentGpsLocation,
+                                isLocatingGps = isLocatingGps,
                                 selected = selectedLocation,
+                                onRequestGps = { requestGpsLocationWeather() },
                                 onSelect = { loc ->
                                     if (loc != selectedLocation) {
                                         loadWeather(loc)
@@ -403,12 +608,15 @@ fun WeatherScreen(
 }
 
 /**
- * Horizontal Quick City Selector Chips
+ * Horizontal Quick City Selector Chips with GPS current location chip
  */
 @Composable
 private fun CitySelectionRow(
     locations: List<WeatherLocation>,
+    currentGpsLocation: WeatherLocation?,
+    isLocatingGps: Boolean,
     selected: WeatherLocation,
+    onRequestGps: () -> Unit,
     onSelect: (WeatherLocation) -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -417,10 +625,59 @@ private fun CitySelectionRow(
             .fillMaxWidth()
             .horizontalScroll(scrollState)
             .padding(horizontal = 12.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        // 1. Current GPS Location Chip
+        val isGpsSelected = (currentGpsLocation != null && selected.latitude == currentGpsLocation.latitude && selected.longitude == currentGpsLocation.longitude) ||
+                            selected.nameBangla == "বর্তমান অবস্থান"
+
+        Surface(
+            onClick = {
+                if (currentGpsLocation != null) {
+                    onSelect(currentGpsLocation)
+                } else {
+                    onRequestGps()
+                }
+            },
+            shape = RoundedCornerShape(20.dp),
+            color = if (isGpsSelected) Color(0xFFFFB020) else CinemaSurfaceVariant,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                if (isGpsSelected) Color(0xFFFFD166) else Color(0xFFFFB020).copy(alpha = 0.4f)
+            )
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                if (isLocatingGps) {
+                    CircularProgressIndicator(
+                        color = if (isGpsSelected) Color.Black else Color(0xFFFFB020),
+                        strokeWidth = 1.5.dp,
+                        modifier = Modifier.size(12.dp)
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.MyLocation,
+                        contentDescription = null,
+                        tint = if (isGpsSelected) Color.Black else Color(0xFFFFB020),
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = currentGpsLocation?.nameBangla ?: "বর্তমান অবস্থান",
+                    color = if (isGpsSelected) Color.Black else TextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = if (isGpsSelected) FontWeight.Bold else FontWeight.Medium
+                )
+            }
+        }
+
+        // 2. City Chips
         locations.forEach { loc ->
-            val isCurrent = loc.latitude == selected.latitude && loc.longitude == selected.longitude
+            val isCurrent = !isGpsSelected && loc.latitude == selected.latitude && loc.longitude == selected.longitude
             Surface(
                 onClick = { onSelect(loc) },
                 shape = RoundedCornerShape(20.dp),

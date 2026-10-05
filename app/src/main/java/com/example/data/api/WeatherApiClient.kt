@@ -135,6 +135,40 @@ object WeatherApiClient {
     }
 
     /**
+     * Reverse geocode coordinates to find nearest city or address name
+     */
+    suspend fun reverseGeocode(context: Context, lat: Double, lon: Double): WeatherLocation = withContext(Dispatchers.IO) {
+        try {
+            if (android.location.Geocoder.isPresent()) {
+                val geocoder = android.location.Geocoder(context, Locale.getDefault())
+                val addresses = geocoder.getFromLocation(lat, lon, 1)
+                if (!addresses.isNullOrEmpty()) {
+                    val addr = addresses[0]
+                    val city = addr.locality ?: addr.subAdminArea ?: addr.adminArea ?: "বর্তমান অবস্থান"
+                    val country = addr.countryName ?: "বাংলাদেশ"
+                    val division = addr.adminArea ?: "বর্তমান এলাকা"
+                    return@withContext WeatherLocation(
+                        nameBangla = city,
+                        nameEnglish = city,
+                        latitude = lat,
+                        longitude = lon,
+                        country = country
+                    )
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Fallback geocoding or default GPS label
+        WeatherLocation(
+            nameBangla = "বর্তমান অবস্থান",
+            nameEnglish = "Current Location",
+            latitude = lat,
+            longitude = lon,
+            country = "বাংলাদেশ"
+        )
+    }
+
+    /**
      * Fetch complete live weather report from Open-Meteo API
      */
     suspend fun fetchWeather(context: Context, location: WeatherLocation): CurrentWeatherReport = withContext(Dispatchers.IO) {

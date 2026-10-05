@@ -79,17 +79,9 @@ fun BanglaOttScreen(
     var searchJob by remember { mutableStateOf<Job?>(null) }
 
     // ------------------------------------------------------------------------
-    // Active Movie Detail & Video Player State
+    // Second Page Navigation: Active Movie Id
     // ------------------------------------------------------------------------
     var activeMovieId by remember { mutableStateOf<String?>(null) }
-    var activeMovieDetail by remember { mutableStateOf<BanglaMovieDetail?>(null) }
-    var isLoadingDetail by remember { mutableStateOf(false) }
-    var activePlayUrl by remember { mutableStateOf<String?>(null) }
-    var activeQualityLabel by remember { mutableStateOf("") }
-    var isDetailsExpanded by remember { mutableStateOf(false) }
-
-    // Selected Episode Bundle for Series
-    var selectedBundleIndex by remember { mutableIntStateOf(0) }
 
     // ------------------------------------------------------------------------
     // Download Dialog State
@@ -99,20 +91,12 @@ fun BanglaOttScreen(
     var downloadDialogDetail by remember { mutableStateOf<BanglaMovieDetail?>(null) }
     var isLoadingDownloadDetail by remember { mutableStateOf(false) }
 
-    // Back handler
-    BackHandler {
-        when {
-            activeMovieId != null -> {
-                activeMovieId = null
-                activePlayUrl = null
-                activeMovieDetail = null
-            }
-            searchQuery.isNotEmpty() -> {
-                searchQuery = ""
-            }
-            onBack != null -> {
-                onBack()
-            }
+    // Back handler for first page
+    BackHandler(enabled = activeMovieId == null && (searchQuery.isNotEmpty() || onBack != null)) {
+        if (searchQuery.isNotEmpty()) {
+            searchQuery = ""
+        } else if (onBack != null) {
+            onBack()
         }
     }
 
@@ -156,34 +140,6 @@ fun BanglaOttScreen(
         }
     }
 
-    // Load active movie detail
-    LaunchedEffect(activeMovieId) {
-        val mid = activeMovieId
-        if (mid != null) {
-            isLoadingDetail = true
-            activeMovieDetail = null
-            activePlayUrl = null
-            selectedBundleIndex = 0
-            val detail = BanglaMovieApiClient.fetchMovieDetail(mid)
-            activeMovieDetail = detail
-            isLoadingDetail = false
-
-            if (detail != null) {
-                // Find first playable URL
-                val firstQuality = detail.qualities.firstOrNull()
-                val serverQuality = detail.downloadServers.firstOrNull()?.qualities?.firstOrNull()
-                val bundleQuality = detail.downloadServers.firstOrNull()?.episodeBundles?.firstOrNull()?.qualities?.firstOrNull()
-
-                val playCandidate = firstQuality?.downloadUrl
-                    ?: serverQuality?.downloadUrl
-                    ?: bundleQuality?.downloadUrl
-
-                activePlayUrl = playCandidate
-                activeQualityLabel = firstQuality?.label ?: serverQuality?.label ?: bundleQuality?.label ?: "HD"
-            }
-        }
-    }
-
     // Trigger download dialog detail fetch
     fun openDownloadDialog(movie: BanglaMovie) {
         targetDownloadMovie = movie
@@ -197,6 +153,25 @@ fun BanglaOttScreen(
             isLoadingDownloadDetail = false
         }
     }
+
+    // ========================================================================
+    // SECOND PAGE: OTT MOVIE/SERIES PLAYER & DETAIL SCREEN
+    // (হুবহু ওটিটি পেজের মতো ভিডিও প্লেয়ার ও বিশদ বিবরণ)
+    // ========================================================================
+    if (activeMovieId != null) {
+        BanglaOttDetailPlayerScreen(
+            movieId = activeMovieId!!,
+            onBack = { activeMovieId = null },
+            onNavigateToDownloads = onNavigateToDownloads,
+            onSelectRelatedMovie = { nextId -> activeMovieId = nextId },
+            modifier = modifier
+        )
+        return
+    }
+
+    // ========================================================================
+    // FIRST PAGE: BANGLA OTT CATALOG SCREEN
+    // ========================================================================
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -327,281 +302,7 @@ fun BanglaOttScreen(
                 .padding(innerPadding)
         ) {
             // ================================================================
-            // 1. ACTIVE VIDEO PLAYER (যখন কোনো মুভি সিলেক্ট করা হয়)
-            // ================================================================
-            if (activeMovieId != null) {
-                val detail = activeMovieDetail
-                Surface(
-                    color = Color.Black,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        // Video Player Screen
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f)
-                                .background(Color.Black)
-                        ) {
-                            if (isLoadingDetail) {
-                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    CircularProgressIndicator(color = BrandRed, modifier = Modifier.size(36.dp))
-                                }
-                            } else if (!activePlayUrl.isNullOrEmpty()) {
-                                VideoPlayerView(
-                                    videoUrl = activePlayUrl!!,
-                                    title = detail?.title ?: "Playing Video",
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                            } else {
-                                Box(
-                                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Icon(Icons.Default.PlayDisabled, contentDescription = null, tint = TextMuted, modifier = Modifier.size(36.dp))
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        Text("সরাসরি ভিডিও স্ট্রিম পাওয়া যায়নি", color = TextSecondary, fontSize = 12.sp)
-                                        Spacer(modifier = Modifier.height(6.dp))
-                                        detail?.downloadServers?.firstOrNull()?.qualities?.firstOrNull()?.let { q ->
-                                            Button(
-                                                onClick = {
-                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(q.downloadUrl))
-                                                    try { context.startActivity(intent) } catch (_: Exception) {}
-                                                },
-                                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                                                shape = RoundedCornerShape(8.dp)
-                                            ) {
-                                                Text("ব্রাউজারে ভিডিও দেখুন", fontSize = 11.sp)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            // Close player button at top-right
-                            IconButton(
-                                onClick = {
-                                    activeMovieId = null
-                                    activePlayUrl = null
-                                    activeMovieDetail = null
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .size(32.dp)
-                                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Close Player", tint = Color.White, modifier = Modifier.size(18.dp))
-                            }
-                        }
-
-                        // Player Control Row: Servers, Qualities & Action Buttons
-                        if (detail != null) {
-                            Surface(
-                                color = CinemaSurface,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Column(modifier = Modifier.padding(10.dp)) {
-                                    Text(
-                                        text = detail.title,
-                                        color = TextPrimary,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-
-                                    Spacer(modifier = Modifier.height(8.dp))
-
-                                    // Action buttons bar
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        // Quality Pills / Server Selector
-                                        val allQualities = detail.qualities.ifEmpty {
-                                            detail.downloadServers.firstOrNull()?.qualities ?: emptyList()
-                                        }
-
-                                        Row(
-                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            allQualities.forEach { q ->
-                                                val isSelected = activePlayUrl == q.downloadUrl
-                                                Surface(
-                                                    onClick = {
-                                                        activePlayUrl = q.downloadUrl
-                                                        activeQualityLabel = q.label
-                                                    },
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = if (isSelected) BrandRed else CinemaSurfaceVariant,
-                                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) BrandRedLight else CinemaBorder)
-                                                ) {
-                                                    Text(
-                                                        text = "${q.label} ${if (q.size.isNotEmpty()) "(${q.size})" else ""}",
-                                                        color = if (isSelected) Color.White else TextSecondary,
-                                                        fontSize = 10.sp,
-                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            // Direct Download Trigger Button
-                                            Button(
-                                                onClick = {
-                                                    targetDownloadMovie = BanglaMovie(
-                                                        id = detail.id,
-                                                        title = detail.title,
-                                                        poster = detail.poster,
-                                                        platform = detail.platform
-                                                    )
-                                                    downloadDialogDetail = detail
-                                                    showDownloadDialog = true
-                                                },
-                                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
-                                                shape = RoundedCornerShape(8.dp),
-                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                                modifier = Modifier.height(28.dp)
-                                            ) {
-                                                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(13.dp))
-                                                Spacer(modifier = Modifier.width(3.dp))
-                                                Text("ডাউনলোড", fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                            }
-
-                                            Spacer(modifier = Modifier.width(6.dp))
-
-                                            // Details info toggle
-                                            FilledTonalButton(
-                                                onClick = { isDetailsExpanded = !isDetailsExpanded },
-                                                colors = ButtonDefaults.filledTonalButtonColors(
-                                                    containerColor = if (isDetailsExpanded) BrandRed.copy(alpha = 0.2f) else CinemaSurfaceVariant,
-                                                    contentColor = if (isDetailsExpanded) BrandRedLight else TextPrimary
-                                                ),
-                                                shape = RoundedCornerShape(8.dp),
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                modifier = Modifier.height(28.dp)
-                                            ) {
-                                                Icon(Icons.Default.Info, contentDescription = null, modifier = Modifier.size(12.dp))
-                                                Spacer(modifier = Modifier.width(2.dp))
-                                                Text(if (isDetailsExpanded) "সংক্ষিপ্ত" else "তথ্য", fontSize = 10.5.sp)
-                                            }
-                                        }
-                                    }
-
-                                    // Episode Bundles (if series)
-                                    val bundles = detail.downloadServers.firstOrNull()?.episodeBundles ?: emptyList()
-                                    if (bundles.isNotEmpty()) {
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text("পর্ব নির্বাচন (Episodes):", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Row(
-                                            modifier = Modifier.horizontalScroll(rememberScrollState()),
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            bundles.forEachIndexed { bIdx, b ->
-                                                val isBundleActive = selectedBundleIndex == bIdx
-                                                Surface(
-                                                    onClick = {
-                                                        selectedBundleIndex = bIdx
-                                                        val q1 = b.qualities.firstOrNull()
-                                                        if (q1 != null) {
-                                                            activePlayUrl = q1.downloadUrl
-                                                            activeQualityLabel = q1.label
-                                                        }
-                                                    },
-                                                    shape = RoundedCornerShape(6.dp),
-                                                    color = if (isBundleActive) CyanAccent.copy(alpha = 0.2f) else CinemaSurfaceVariant,
-                                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isBundleActive) CyanAccent else CinemaBorder)
-                                                ) {
-                                                    Text(
-                                                        text = b.episodeRange,
-                                                        color = if (isBundleActive) CyanAccent else TextPrimary,
-                                                        fontSize = 10.5.sp,
-                                                        fontWeight = if (isBundleActive) FontWeight.Bold else FontWeight.Normal,
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Expanded Details Block
-                                    if (isDetailsExpanded) {
-                                        Spacer(modifier = Modifier.height(10.dp))
-                                        HorizontalDivider(color = CinemaBorder)
-                                        Spacer(modifier = Modifier.height(8.dp))
-
-                                        // Storyline
-                                        if (detail.storyline.isNotBlank()) {
-                                            Text("কাহিনী সংক্ষেপ:", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            Text(text = detail.storyline, color = TextSecondary, fontSize = 11.5.sp, lineHeight = 16.sp)
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                        }
-
-                                        // Cast
-                                        if (detail.cast.isNotBlank()) {
-                                            Text("অভিনয়ে:", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            Text(text = detail.cast, color = TextPrimary, fontSize = 11.5.sp)
-                                            Spacer(modifier = Modifier.height(6.dp))
-                                        }
-
-                                        // Metadata pills
-                                        Row(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            if (detail.platform.isNotBlank()) {
-                                                Surface(color = BrandRed.copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
-                                                    Text(text = detail.platform, color = BrandRedLight, fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                                }
-                                            }
-                                            if (detail.rating > 0.0) {
-                                                Surface(color = Color(0xFFFFB020).copy(alpha = 0.2f), shape = RoundedCornerShape(4.dp)) {
-                                                    Text(text = "★ ${detail.rating}", color = Color(0xFFFFB020), fontSize = 10.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                                }
-                                            }
-                                            if (detail.printQuality.isNotBlank()) {
-                                                Surface(color = CinemaSurfaceVariant, shape = RoundedCornerShape(4.dp)) {
-                                                    Text(text = detail.printQuality, color = TextMuted, fontSize = 10.sp, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
-                                                }
-                                            }
-                                        }
-
-                                        // Screenshots gallery
-                                        if (detail.screenshots.isNotEmpty()) {
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            Text("স্ক্রিনশটস:", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                items(detail.screenshots) { scUrl ->
-                                                    AsyncImage(
-                                                        model = scUrl,
-                                                        contentDescription = null,
-                                                        contentScale = ContentScale.Crop,
-                                                        modifier = Modifier
-                                                            .width(130.dp)
-                                                            .height(75.dp)
-                                                            .clip(RoundedCornerShape(6.dp))
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // ================================================================
-            // 2. FILTER CHIPS ROW (প্ল্যাটফর্ম ও ক্যাটাগরি চিপস)
+            // FILTER CHIPS ROW (প্ল্যাটফর্ম ও ক্যাটাগরি চিপস)
             // ================================================================
             Surface(
                 color = CinemaSurface,

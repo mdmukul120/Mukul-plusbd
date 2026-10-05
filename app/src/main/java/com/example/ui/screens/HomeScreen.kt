@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -209,199 +210,51 @@ fun HomeScreen(
         }
 
         // ----------------------------------------------------
-        // LIVE WEATHER SUMMARY BANNER (আবহাওয়া পূর্বাভাস কার্ড)
+        // QUICK SHORTCUTS ROW: WEATHER, MUSIC, BANGLA OTT IN A SINGLE ROW
+        // (একই লাইনে একজায়গায় আবহাওয়া, মিউজিক ও বাংলা ওটিটি ছোট বাটন)
         // ----------------------------------------------------
         item {
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFB020).copy(alpha = 0.35f)),
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                    .clickable { onNavigateToWeather() }
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(
-                                    Color(0xFF1E3C72).copy(alpha = 0.45f),
-                                    Color(0xFF2A5298).copy(alpha = 0.2f),
-                                    CinemaSurface
-                                )
-                            )
-                        )
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFFFB020).copy(alpha = 0.2f),
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.WbSunny,
-                                    contentDescription = null,
-                                    tint = Color(0xFFFFB020),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "আজকের আবহাওয়া বার্তা",
-                                    color = TextPrimary,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = Color(0xFF10B981).copy(alpha = 0.2f)
-                                ) {
-                                    Text(
-                                        text = "LIVE",
-                                        color = Color(0xFF10B981),
-                                        fontSize = 8.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "তাপমাত্রা, ঘণ্টাওয়ারি ও ৭ দিনের পূর্বাভাস দেখুন",
-                                color = TextMuted,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
+                // 1. Weather Button (আবহাওয়া)
+                QuickShortcutButton(
+                    title = "আবহাওয়া",
+                    subtitle = "লাইভ আপডেট",
+                    icon = Icons.Default.WbSunny,
+                    accentColor = Color(0xFFFFB020),
+                    bgGradient = listOf(Color(0xFF1E3C72), Color(0xFF2A5298)),
+                    badge = "LIVE",
+                    modifier = Modifier.weight(1f),
+                    onClick = onNavigateToWeather
+                )
 
-                    FilledTonalButton(
-                        onClick = onNavigateToWeather,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = BrandRed.copy(alpha = 0.2f),
-                            contentColor = BrandRedLight
-                        ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text("দেখুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Icon(Icons.Default.ArrowForwardIos, contentDescription = null, modifier = Modifier.size(10.dp))
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(14.dp))
-        }
+                // 2. Music Button (মিউজিক)
+                QuickShortcutButton(
+                    title = "মিউজিক",
+                    subtitle = "গান ও অডিও",
+                    icon = Icons.Default.MusicNote,
+                    accentColor = CyanAccent,
+                    bgGradient = listOf(Color(0xFF0F3443), Color(0xFF134E5E)),
+                    modifier = Modifier.weight(1f),
+                    onClick = onNavigateToMusic
+                )
 
-        // ----------------------------------------------------
-        // BANGLA OTT PLATFORMS BANNER (চরকি, হইচই, বঙ্গ, নেটফ্লিক্স)
-        // ----------------------------------------------------
-        item {
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed.copy(alpha = 0.35f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp)
-                    .clickable { onNavigateToBanglaOtt() }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            Brush.horizontalGradient(
-                                listOf(
-                                    Color(0xFF8B0000).copy(alpha = 0.45f),
-                                    Color(0xFFE50914).copy(alpha = 0.2f),
-                                    CinemaSurface
-                                )
-                            )
-                        )
-                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = BrandRed.copy(alpha = 0.2f),
-                            modifier = Modifier.size(38.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.Subscriptions,
-                                    contentDescription = null,
-                                    tint = BrandRedLight,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "বাংলা ওটিটি প্ল্যাটফর্ম",
-                                    color = TextPrimary,
-                                    fontSize = 13.5.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = BrandRed
-                                ) {
-                                    Text(
-                                        text = "NEW",
-                                        color = Color.White,
-                                        fontSize = 8.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "Chorki, Hoichoi, Bongo, Toffee ও নেটফ্লিক্স মুভিজ",
-                                color = TextMuted,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-
-                    FilledTonalButton(
-                        onClick = onNavigateToBanglaOtt,
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = BrandRed,
-                            contentColor = Color.White
-                        ),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                        modifier = Modifier.height(28.dp)
-                    ) {
-                        Text("দেখুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        Spacer(modifier = Modifier.width(2.dp))
-                        Icon(Icons.Default.ArrowForwardIos, contentDescription = null, modifier = Modifier.size(10.dp))
-                    }
-                }
+                // 3. Bangla OTT Button (বাংলা ওটিটি)
+                QuickShortcutButton(
+                    title = "বাংলা ওটিটি",
+                    subtitle = "মুভি ও সিরিজ",
+                    icon = Icons.Default.Subscriptions,
+                    accentColor = BrandRedLight,
+                    bgGradient = listOf(Color(0xFF4A0E17), Color(0xFF7B0000)),
+                    badge = "NEW",
+                    modifier = Modifier.weight(1f),
+                    onClick = onNavigateToBanglaOtt
+                )
             }
             Spacer(modifier = Modifier.height(14.dp))
         }
@@ -954,3 +807,91 @@ private fun SectionHeader(
         }
     }
 }
+
+@Composable
+private fun QuickShortcutButton(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accentColor: Color,
+    bgGradient: List<Color>,
+    modifier: Modifier = Modifier,
+    badge: String? = null,
+    onClick: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, accentColor.copy(alpha = 0.35f)),
+        modifier = modifier
+            .height(64.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Brush.linearGradient(bgGradient.map { it.copy(alpha = 0.55f) }))
+                .padding(horizontal = 6.dp, vertical = 6.dp)
+        ) {
+            if (badge != null) {
+                Surface(
+                    shape = RoundedCornerShape(3.dp),
+                    color = BrandRed,
+                    modifier = Modifier.align(Alignment.TopEnd)
+                ) {
+                    Text(
+                        text = badge,
+                        color = Color.White,
+                        fontSize = 7.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 3.dp, vertical = 0.5.dp)
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = accentColor.copy(alpha = 0.2f),
+                        modifier = Modifier.size(22.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = accentColor,
+                                modifier = Modifier.size(13.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = title,
+                        color = TextPrimary,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    color = TextMuted,
+                    fontSize = 9.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
