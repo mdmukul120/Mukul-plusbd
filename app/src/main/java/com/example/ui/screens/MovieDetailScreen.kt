@@ -198,7 +198,7 @@ fun MovieDetailScreen(
                         }
                         IconButton(onClick = {
                             val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                                putExtra(Intent.EXTRA_TEXT, "Watch $displayTitle on Mukul Plus OTT: ${activeStreamUrl ?: "https://www.ctghall.com/api/movies/$movieId"}")
+                                putExtra(Intent.EXTRA_TEXT, "Watch $displayTitle on Mukul Plus OTT: ${activeStreamUrl ?: displayTitle}")
                                 type = "text/plain"
                             }
                             context.startActivity(Intent.createChooser(sendIntent, "Share Movie"))

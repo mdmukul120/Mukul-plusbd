@@ -24,8 +24,8 @@ data class CtgMovie(
         return when {
             poster_path.isNullOrEmpty() -> ""
             poster_path.startsWith("http") -> poster_path
-            poster_path.startsWith("/") && (poster_path.endsWith(".jpg") || poster_path.endsWith(".png") || poster_path.endsWith(".webp")) && !poster_path.contains("storage") -> "https://image.tmdb.org/t/p/w500$poster_path"
-            else -> "https://www.ctghall.com$poster_path"
+            poster_path.startsWith("/") -> "https://image.tmdb.org/t/p/w500$poster_path"
+            else -> poster_path
         }
     }
 
@@ -33,14 +33,14 @@ data class CtgMovie(
         return when {
             backdrop_path.isNullOrEmpty() -> getFullPosterUrl()
             backdrop_path.startsWith("http") -> backdrop_path
-            backdrop_path.startsWith("/") && (backdrop_path.endsWith(".jpg") || backdrop_path.endsWith(".png")) -> "https://image.tmdb.org/t/p/w780$backdrop_path"
-            else -> "https://www.ctghall.com$backdrop_path"
+            backdrop_path.startsWith("/") -> "https://image.tmdb.org/t/p/w780$backdrop_path"
+            else -> backdrop_path
         }
     }
 
     fun getFullStreamUrl(): String? {
         if (url.isNullOrEmpty()) return null
-        return if (url.startsWith("http")) url else "https://www.ctghall.com$url"
+        return url
     }
 }
 
@@ -99,6 +99,27 @@ data class ExtractorMovieInfo(
     val type: String? = null,
     val downloadLinks: List<DownloadLink> = emptyList(),
     val streamLinks: List<DownloadLink> = emptyList()
+)
+
+data class BongoEpisode(
+    val id: String,
+    val systemId: String,
+    val title: String,
+    val thumbnail: String? = null,
+    val duration: String? = null,
+    val season: Int? = null,
+    val episodeNumber: Int? = null
+) {
+    val hlsUrl: String get() = "https://hamyra-api.mdibrahimkhalil516.workers.dev/bongo/hls?id=$id"
+}
+
+data class BongoShow(
+    val systemId: String,
+    val programTitle: String,
+    val season: Int = 1,
+    val maxSeason: Int = 1,
+    val itemCount: Int = 0,
+    val items: List<BongoEpisode> = emptyList()
 )
 
 data class TvChannel(

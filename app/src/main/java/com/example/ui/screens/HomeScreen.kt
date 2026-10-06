@@ -85,15 +85,15 @@ fun HomeScreen(
             bongoVideos = mediaRepository.getBongoVideos()
 
             // 4. Hollywood
-            val hollywoodRes = ApiClient.fetchCtgMovies(library = 1, page = 2, sort = "createdAt")
+            val hollywoodRes = ApiClient.fetchCtgMovies(library = 7, page = 1, sort = "createdAt")
             hollywoodMovies = hollywoodRes.data
 
             // 4. Bollywood
-            val bollywoodRes = ApiClient.fetchCtgMovies(library = 4, page = 1, sort = "createdAt")
+            val bollywoodRes = ApiClient.fetchCtgMovies(library = 3, page = 1, sort = "createdAt")
             bollywoodMovies = bollywoodRes.data
 
             // 5. Bangla
-            val banglaRes = ApiClient.fetchCtgMovies(library = 6, page = 1, sort = "createdAt")
+            val banglaRes = ApiClient.fetchCtgMovies(library = 5, page = 1, sort = "createdAt")
             banglaMovies = banglaRes.data
 
             // 6. South / Action
@@ -323,7 +323,7 @@ fun HomeScreen(
             item {
                 SectionHeader(
                     title = LanguageManager.get("trending"),
-                    subtitle = "CtgHall এক্সক্লুসিভ কালেকশন",
+                    subtitle = "প্রিমিয়াম ট্রেন্ডিং ও লেটেস্ট কালেকশন",
                     onSeeAllClick = onNavigateToMovies
                 )
                 LazyRow(

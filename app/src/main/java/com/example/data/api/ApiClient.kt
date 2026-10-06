@@ -57,6 +57,19 @@ object ApiClient {
         return hamyraToken
     }
 
+    fun buildHamyraHeaders(): okhttp3.Headers {
+        val builder = okhttp3.Headers.Builder()
+            .add("User-Agent", HAMYRA_USER_AGENT)
+            .add("Origin", HAMYRA_ORIGIN)
+            .add("Referer", "$HAMYRA_ORIGIN/")
+            .add("Accept", "application/json")
+        val token = getHamyraToken()
+        if (!token.isNullOrEmpty()) {
+            builder.add("Authorization", "Bearer $token")
+        }
+        return builder.build()
+    }
+
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectionPool(okhttp3.ConnectionPool(15, 5, TimeUnit.MINUTES))
         .retryOnConnectionFailure(true)
@@ -373,10 +386,140 @@ object ApiClient {
     }
 
     private fun getFallbackMovieById(id: Long): CtgMovie? {
-        return fallbackMoviesList.find { it.id == id } ?: bongoMoviesCache[id]
+        return unifiedMoviesCache[id] ?: fallbackMoviesList.find { it.id == id } ?: bongoMoviesCache[id]
     }
 
-    // 1. CtgHall Movies List
+    private val unifiedMoviesCache = java.util.concurrent.ConcurrentHashMap<Long, CtgMovie>()
+
+    private fun cleanHtmlText(text: String): String {
+        return text
+            .replace("&ndash;", "–")
+            .replace("&mdash;", "—")
+            .replace("&#039;", "'")
+            .replace("&rsquo;", "'")
+            .replace("&lsquo;", "'")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&hellip;", "…")
+            .trim()
+    }
+
+    private fun cleanMlsbdTitle(rawTitle: String): Pair<String, Int?> {
+        var t = cleanHtmlText(rawTitle)
+        t = t.replace(Regex("\\[.*?\\]"), "").trim()
+        val yearMatch = Regex("\\((\\d{4})\\)").find(t)
+        val year = yearMatch?.groupValues?.get(1)?.toIntOrNull()
+        val mainTitle = when {
+            t.contains("(") -> t.substringBefore("(").trim()
+            t.contains("–") -> t.substringBefore("–").trim()
+            t.contains("â€“") -> t.substringBefore("â€“").trim()
+            t.contains("-") -> t.substringBefore("-").trim()
+            else -> t
+        }
+        return Pair(if (mainTitle.isNotEmpty()) mainTitle else t, year)
+    }
+
+    private fun parseTmdbMovie(item: JSONObject, catId: Int = 1, catName: String = "Trending"): CtgMovie {
+        val id = item.optLong("id")
+        val title = item.optString("title", item.optString("name", "Untitled"))
+        val relDate = item.optString("release_date", item.optString("first_air_date", null))
+        val yr = relDate?.split("-")?.firstOrNull()?.toIntOrNull()
+        val poster = item.optString("poster_path", null)
+        val backdrop = item.optString("backdrop_path", null)
+        val rating = if (item.has("vote_average")) item.optDouble("vote_average") else 7.8
+        val overview = item.optString("overview", null)
+
+        val movie = CtgMovie(
+            id = id,
+            title = title,
+            original_title = item.optString("original_title", null),
+            year = yr,
+            poster_path = poster,
+            backdrop_path = backdrop,
+            release_date = relDate,
+            online_rating = rating,
+            overview = overview,
+            tmdb_id = id.toString(),
+            url = "https://cmos.raphsm4.dev/?tmdb=$id",
+            Library = CtgLibrary(catId, catName, "MOVIE")
+        )
+        unifiedMoviesCache[id] = movie
+        return movie
+    }
+
+    private fun parseMlbdMovie(item: JSONObject, catId: Int, catName: String): CtgMovie {
+        val slug = item.optString("slug")
+        val uniqueId = Math.abs(slug.hashCode().toLong()) + 1000000L
+        val title = cleanHtmlText(item.optString("title", "Untitled"))
+        val yr = if (item.has("year") && !item.isNull("year")) item.optInt("year") else 2025
+        val poster = item.optString("poster", null)
+        val quality = cleanHtmlText(item.optString("quality_tag", ""))
+        val lang = cleanHtmlText(item.optString("language", ""))
+
+        val movie = CtgMovie(
+            id = uniqueId,
+            title = title,
+            original_title = if (lang.isNotEmpty()) lang else catName,
+            year = yr,
+            poster_path = poster,
+            backdrop_path = poster,
+            release_date = "$yr-01-01",
+            online_rating = 8.2,
+            genre = if (lang.isNotEmpty()) lang else catName,
+            casts = quality.ifEmpty { null },
+            file_path = slug,
+            url = "$HAMYRA_API_BASE/mlbd/by-slug?slug=$slug",
+            Library = CtgLibrary(catId, catName, "MOVIE")
+        )
+        unifiedMoviesCache[uniqueId] = movie
+        return movie
+    }
+
+    private fun parseMlsbdMovie(item: JSONObject, catId: Int, catName: String): CtgMovie {
+        val slug = item.optString("slug")
+        val uniqueId = Math.abs(slug.hashCode().toLong()) + 2000000L
+        val rawTitle = item.optString("title", "Untitled")
+        val (cleanTitle, parsedYear) = cleanMlsbdTitle(rawTitle)
+        val poster = item.optString("poster", null)
+
+        val movie = CtgMovie(
+            id = uniqueId,
+            title = cleanTitle,
+            original_title = catName,
+            year = parsedYear ?: 2025,
+            poster_path = poster,
+            backdrop_path = poster,
+            release_date = "${parsedYear ?: 2025}-01-01",
+            online_rating = 8.0,
+            genre = catName,
+            file_path = slug,
+            url = "$HAMYRA_API_BASE/mlsbd/detail?slug=$slug",
+            Library = CtgLibrary(catId, catName, "MOVIE")
+        )
+        unifiedMoviesCache[uniqueId] = movie
+        return movie
+    }
+
+    private val defaultMenusData = CtgMenusData(
+        movieCategories = listOf(
+            CtgCategoryItem(1, "🔥 Trending", "TRENDING"),
+            CtgCategoryItem(2, "🎬 Hindi Dubbed", "LANGUAGE"),
+            CtgCategoryItem(3, "✨ Bollywood", "CATEGORY"),
+            CtgCategoryItem(4, "🎧 Dual Audio", "LANGUAGE"),
+            CtgCategoryItem(5, "🇧🇩 Bangla Movies", "CATEGORY"),
+            CtgCategoryItem(6, "💥 South Indian", "LANGUAGE"),
+            CtgCategoryItem(7, "🌟 Hollywood", "CATEGORY"),
+            CtgCategoryItem(8, "📺 Bangla Dubbed", "LANGUAGE"),
+            CtgCategoryItem(9, "🎭 Natok & Series", "CATEGORY"),
+            CtgCategoryItem(10, "⛩️ Anime & Korean", "CATEGORY"),
+            CtgCategoryItem(11, "🌏 Tamil & Telugu", "LANGUAGE"),
+            CtgCategoryItem(12, "🔥 Bongo BD", "BONGO")
+        ),
+        years = (2026 downTo 2012).toList(),
+        movieGenres = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Drama", "Fantasy", "Horror", "Romance", "Sci-Fi", "Thriller")
+    )
+
+    // 1. Unified Movies List (Replaces CtgHall with TMDB, Hamyra MLBD & MLSBD)
     suspend fun fetchCtgMovies(
         library: Int? = 1,
         page: Int = 1,
@@ -386,224 +529,488 @@ object ApiClient {
         year: Int? = null,
         genre: String? = null
     ): CtgMoviesResponse = withContext(Dispatchers.IO) {
-        // Circuit breaker: If CtgHall server recently failed/timed out, return fallback instantly
-        if (System.currentTimeMillis() < ctgHallCooldownUntil) {
-            return@withContext getFallbackCtgMovies(library, genre, page, search)
-        }
+        val safePage = maxOf(1, page)
+        val movies = mutableListOf<CtgMovie>()
 
         try {
-            val urlBuilder = StringBuilder("https://www.ctghall.com/api/movies?fields=id,title,original_title,year,poster_path,release_date,rating,online_rating&sort=$sort&sort_order=$sortOrder&page=$page")
-            if (library != null) {
-                urlBuilder.append("&library=$library")
-            }
+            // A. Search Mode (searches across TMDB + MLBD + MLSBD)
             if (!search.isNullOrBlank()) {
                 val encoded = java.net.URLEncoder.encode(search.trim(), "UTF-8")
-                urlBuilder.append("&title=$encoded&search=$encoded")
+
+                // 1. TMDB Multi Search
+                try {
+                    val tmdbUrl = "https://api.themoviedb.org/3/search/multi?api_key=$TMDB_API_KEY&language=en-US&query=$encoded&page=$safePage"
+                    val req = Request.Builder().url(tmdbUrl).build()
+                    val res = client.newCall(req).execute()
+                    val body = res.body?.string()
+                    if (!body.isNullOrEmpty()) {
+                        val json = JSONObject(body)
+                        val results = json.optJSONArray("results") ?: JSONArray()
+                        for (i in 0 until results.length()) {
+                            val item = results.optJSONObject(i) ?: continue
+                            val mediaType = item.optString("media_type", "movie")
+                            if (mediaType == "person") continue
+                            movies.add(parseTmdbMovie(item, 1, "Search"))
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                // 2. MLBD Search
+                try {
+                    val mlbdUrl = "$HAMYRA_API_BASE/mlbd/search?q=$encoded"
+                    val req = Request.Builder().url(mlbdUrl).headers(buildHamyraHeaders()).build()
+                    val res = client.newCall(req).execute()
+                    val body = res.body?.string()
+                    if (!body.isNullOrEmpty()) {
+                        val json = JSONObject(body)
+                        val items = json.optJSONArray("items") ?: JSONArray()
+                        for (i in 0 until items.length()) {
+                            val item = items.optJSONObject(i) ?: continue
+                            movies.add(parseMlbdMovie(item, 2, "Search"))
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                // 3. MLSBD Search
+                try {
+                    val mlsbdUrl = "$HAMYRA_API_BASE/mlsbd/browse?q=$encoded&page=$safePage&perPage=15"
+                    val req = Request.Builder().url(mlsbdUrl).headers(buildHamyraHeaders()).build()
+                    val res = client.newCall(req).execute()
+                    val body = res.body?.string()
+                    if (!body.isNullOrEmpty()) {
+                        val json = JSONObject(body)
+                        val items = json.optJSONArray("items") ?: JSONArray()
+                        for (i in 0 until items.length()) {
+                            val item = items.optJSONObject(i) ?: continue
+                            movies.add(parseMlsbdMovie(item, 5, "Search"))
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                var filtered = movies.distinctBy { it.title.lowercase().trim() }
+                if (year != null && year > 0) {
+                    filtered = filtered.filter { it.year == year }
+                }
+                if (!genre.isNullOrBlank()) {
+                    filtered = filtered.filter { it.genre?.contains(genre, ignoreCase = true) == true }
+                }
+
+                return@withContext CtgMoviesResponse(
+                    total = filtered.size,
+                    pages = if (filtered.size > 20) 2 else 1,
+                    current_page = safePage,
+                    data = filtered
+                )
             }
+
+            // B. Category Browse Mode
+            var totalPages = 10
+            val targetLib = library ?: 1
+
+            // Special genre filters (e.g. from HomeScreen)
+            if (genre?.equals("Animation", ignoreCase = true) == true) {
+                val url = "$HAMYRA_API_BASE/mlsbd/browse?cat=animation-movies&page=$safePage&perPage=20"
+                val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val items = json.optJSONArray("items") ?: JSONArray()
+                    totalPages = json.optInt("totalPages", 10)
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        movies.add(parseMlsbdMovie(item, 10, "Animation"))
+                    }
+                }
+            } else if (genre?.equals("Action", ignoreCase = true) == true) {
+                val url = "$HAMYRA_API_BASE/mlbd/category?slug=telugu&kind=language&page=$safePage&only=movie"
+                val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val items = json.optJSONArray("items") ?: JSONArray()
+                    totalPages = json.optInt("total_pages", 15)
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        movies.add(parseMlbdMovie(item, 6, "Action"))
+                    }
+                }
+            } else if (sort.contains("rating", ignoreCase = true)) {
+                val url = "https://api.themoviedb.org/3/movie/top_rated?api_key=$TMDB_API_KEY&language=en-US&page=$safePage"
+                val req = Request.Builder().url(url).build()
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val results = json.optJSONArray("results") ?: JSONArray()
+                    totalPages = json.optInt("total_pages", 20)
+                    for (i in 0 until results.length()) {
+                        val item = results.optJSONObject(i) ?: continue
+                        movies.add(parseTmdbMovie(item, 1, "Top Rated"))
+                    }
+                }
+            } else {
+                when (targetLib) {
+                    1 -> {
+                        // 1. Trending & Popular (TMDB)
+                        val url = "https://api.themoviedb.org/3/trending/movie/week?api_key=$TMDB_API_KEY&language=en-US&page=$safePage"
+                        val req = Request.Builder().url(url).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val results = json.optJSONArray("results") ?: JSONArray()
+                            totalPages = json.optInt("total_pages", 25)
+                            for (i in 0 until results.length()) {
+                                val item = results.optJSONObject(i) ?: continue
+                                movies.add(parseTmdbMovie(item, 1, "Trending"))
+                            }
+                        }
+                    }
+                    2 -> {
+                        // 2. Hindi Dubbed (MLBD)
+                        val url = "$HAMYRA_API_BASE/mlbd/category?slug=hindi-dubbed&kind=language&page=$safePage&only=movie"
+                        val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val items = json.optJSONArray("items") ?: JSONArray()
+                            totalPages = json.optInt("total_pages", 25)
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                movies.add(parseMlbdMovie(item, 2, "Hindi Dubbed"))
+                            }
+                        }
+                    }
+                    3, 4 -> {
+                        // 3. Bollywood (MLBD / MLSBD)
+                        val url = "$HAMYRA_API_BASE/mlbd/category?slug=bollywood&kind=category&page=$safePage&only=movie"
+                        val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val items = json.optJSONArray("items") ?: JSONArray()
+                            totalPages = json.optInt("total_pages", 10)
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                movies.add(parseMlbdMovie(item, 3, "Bollywood"))
+                            }
+                        }
+                    }
+                    5, 6 -> {
+                        // 5/6. Bangla Movies (MLSBD)
+                        val url = "$HAMYRA_API_BASE/mlsbd/browse?cat=bangla-movies&page=$safePage&perPage=20"
+                        val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val items = json.optJSONArray("items") ?: JSONArray()
+                            totalPages = json.optInt("totalPages", 50)
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                movies.add(parseMlsbdMovie(item, 5, "Bangla Movies"))
+                            }
+                        }
+                    }
+                    7 -> {
+                        // 7. Hollywood (TMDB Discover Popular)
+                        val url = "https://api.themoviedb.org/3/discover/movie?api_key=$TMDB_API_KEY&language=en-US&sort_by=popularity.desc&page=$safePage&with_original_language=en&vote_count.gte=100"
+                        val req = Request.Builder().url(url).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val results = json.optJSONArray("results") ?: JSONArray()
+                            totalPages = json.optInt("total_pages", 50)
+                            for (i in 0 until results.length()) {
+                                val item = results.optJSONObject(i) ?: continue
+                                movies.add(parseTmdbMovie(item, 7, "Hollywood"))
+                            }
+                        }
+                    }
+                    8 -> {
+                        // 8. Bangla Dubbed (MLSBD)
+                        val url = "$HAMYRA_API_BASE/mlsbd/browse?cat=bangla-dubbed&page=$safePage&perPage=20"
+                        val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val items = json.optJSONArray("items") ?: JSONArray()
+                            totalPages = json.optInt("totalPages", 40)
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                movies.add(parseMlsbdMovie(item, 8, "Bangla Dubbed"))
+                            }
+                        }
+                    }
+                    9 -> {
+                        // 9. Natok & Telefilm (MLSBD)
+                        val url = "$HAMYRA_API_BASE/mlsbd/browse?cat=natok-teleflim&page=$safePage&perPage=20"
+                        val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val items = json.optJSONArray("items") ?: JSONArray()
+                            totalPages = json.optInt("totalPages", 30)
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                movies.add(parseMlsbdMovie(item, 9, "Natok & Series"))
+                            }
+                        }
+                    }
+                    10 -> {
+                        // 10. Korean & Asian (MLSBD)
+                        val url = "$HAMYRA_API_BASE/mlsbd/browse?cat=korean-movies&page=$safePage&perPage=20"
+                        val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val items = json.optJSONArray("items") ?: JSONArray()
+                            totalPages = json.optInt("totalPages", 30)
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                movies.add(parseMlsbdMovie(item, 10, "Korean & Asian"))
+                            }
+                        }
+                    }
+                    11 -> {
+                        // 11. Tamil & Telugu (MLBD)
+                        val url = "$HAMYRA_API_BASE/mlbd/category?slug=tamil&kind=language&page=$safePage&only=movie"
+                        val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val items = json.optJSONArray("items") ?: JSONArray()
+                            totalPages = json.optInt("total_pages", 15)
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                movies.add(parseMlbdMovie(item, 11, "Tamil & Telugu"))
+                            }
+                        }
+                    }
+                    12 -> {
+                        // 12. Bongo BD
+                        val bongo = fetchBongoVideos()
+                        return@withContext CtgMoviesResponse(total = bongo.size, pages = 1, current_page = 1, data = bongo)
+                    }
+                    else -> {
+                        // Fallback: Dual Audio (MLBD)
+                        val url = "$HAMYRA_API_BASE/mlbd/category?slug=dual-audio&kind=language&page=$safePage&only=movie"
+                        val req = Request.Builder().url(url).headers(buildHamyraHeaders()).build()
+                        val res = client.newCall(req).execute()
+                        val body = res.body?.string()
+                        if (!body.isNullOrEmpty()) {
+                            val json = JSONObject(body)
+                            val items = json.optJSONArray("items") ?: JSONArray()
+                            totalPages = json.optInt("total_pages", 20)
+                            for (i in 0 until items.length()) {
+                                val item = items.optJSONObject(i) ?: continue
+                                movies.add(parseMlbdMovie(item, 4, "Dual Audio"))
+                            }
+                        }
+                    }
+                }
+            }
+
+            var finalResult = movies.distinctBy { it.title.lowercase().trim() }
             if (year != null && year > 0) {
-                urlBuilder.append("&year=$year")
+                finalResult = finalResult.filter { it.year == year }
             }
             if (!genre.isNullOrBlank()) {
-                urlBuilder.append("&genre=${java.net.URLEncoder.encode(genre, "UTF-8")}")
+                finalResult = finalResult.filter { it.genre?.contains(genre, ignoreCase = true) == true }
             }
-            val url = urlBuilder.toString()
 
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "MukulPlus-OTT/1.0")
-                .header("Accept", "application/json")
-                .build()
-
-            val response = ctgClient.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext getFallbackCtgMovies(library, genre, page, search)
-            val json = JSONObject(body)
-
-            val total = json.optInt("total", 0)
-            val pages = json.optInt("pages", 1)
-            val currentPage = json.optInt("current_page", 1)
-            val dataArray = json.optJSONArray("data") ?: JSONArray()
-
-            val movies = mutableListOf<CtgMovie>()
-            for (i in 0 until dataArray.length()) {
-                val item = dataArray.optJSONObject(i) ?: continue
-                val libObj = item.optJSONObject("Library")
-                val lib = if (libObj != null) {
-                    CtgLibrary(
-                        id = libObj.optInt("id", library ?: 1),
-                        name = libObj.optString("name", "Movies"),
-                        type = libObj.optString("type", "MOVIE")
-                    )
-                } else null
-
-                movies.add(
-                    CtgMovie(
-                        id = item.optLong("id"),
-                        title = item.optString("title", "Untitled"),
-                        original_title = item.optString("original_title", null),
-                        year = if (item.has("year") && !item.isNull("year")) item.optInt("year") else null,
-                        poster_path = item.optString("poster_path", null),
-                        backdrop_path = item.optString("backdrop_path", null),
-                        release_date = item.optString("release_date", null),
-                        online_rating = if (item.has("online_rating")) item.optDouble("online_rating") else null,
-                        genre = item.optString("genre", null),
-                        Library = lib
-                    )
+            if (finalResult.isNotEmpty()) {
+                return@withContext CtgMoviesResponse(
+                    total = maxOf(finalResult.size, totalPages * 20),
+                    pages = maxOf(1, totalPages),
+                    current_page = safePage,
+                    data = finalResult
                 )
             }
-            CtgMoviesResponse(total = total, pages = pages, current_page = currentPage, data = movies)
         } catch (e: Exception) {
-            // Activate 15-minute circuit breaker so subsequent calls return fallback instantly without hanging
-            ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
-            Log.d(TAG, "CtgHall server not reachable (${e.message}). Serving fallback catalog.")
-            getFallbackCtgMovies(library, genre, page, search)
+            Log.d(TAG, "fetchCtgMovies API error: ${e.message}")
         }
+
+        getFallbackCtgMovies(library, genre, page, search)
     }
 
-    private val defaultMenusData = CtgMenusData(
-        movieCategories = listOf(
-            CtgCategoryItem(1, "English Movies", "MOVIE"),
-            CtgCategoryItem(4, "Bollywood Movies", "MOVIE"),
-            CtgCategoryItem(5, "Asian & Anime", "MOVIE"),
-            CtgCategoryItem(6, "Bangla Movies", "MOVIE"),
-            CtgCategoryItem(7, "South Indian", "MOVIE")
-        ),
-        years = (2026 downTo 2010).toList(),
-        movieGenres = listOf("Action", "Adventure", "Animation", "Comedy", "Crime", "Drama", "Fantasy", "Horror", "Romance", "Sci-Fi", "Thriller")
-    )
-
-    // 2. CtgHall Movie Detail
+    // 2. Movie Detail (Rich metadata & Direct Streams from TMDB, CMOS, MLBD, MLSBD, Bongo)
     suspend fun fetchCtgMovieDetail(id: Long): CtgMovie? = withContext(Dispatchers.IO) {
-        if (System.currentTimeMillis() < ctgHallCooldownUntil) {
-            return@withContext getFallbackMovieById(id)
+        var movie = unifiedMoviesCache[id] ?: getFallbackMovieById(id)
+
+        // A. If TMDB ID exists or ID in TMDB range:
+        val tmdbId = movie?.tmdb_id ?: (if (id in 1..999999L) id.toString() else null)
+        if (tmdbId != null) {
+            try {
+                val url = "https://api.themoviedb.org/3/movie/$tmdbId?api_key=$TMDB_API_KEY&language=en-US&append_to_response=credits,videos"
+                val req = Request.Builder().url(url).build()
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val credits = json.optJSONObject("credits")
+                    val castList = mutableListOf<String>()
+                    credits?.optJSONArray("cast")?.let { cArr ->
+                        for (i in 0 until minOf(5, cArr.length())) {
+                            cArr.optJSONObject(i)?.optString("name")?.let { castList.add(it) }
+                        }
+                    }
+                    val genresList = mutableListOf<String>()
+                    json.optJSONArray("genres")?.let { gArr ->
+                        for (i in 0 until gArr.length()) {
+                            gArr.optJSONObject(i)?.optString("name")?.let { genresList.add(it) }
+                        }
+                    }
+                    val overview = json.optString("overview", movie?.overview)
+                    val poster = json.optString("poster_path", movie?.poster_path)
+                    val backdrop = json.optString("backdrop_path", movie?.backdrop_path)
+                    val releaseDate = json.optString("release_date", movie?.release_date)
+                    val rating = if (json.has("vote_average")) json.optDouble("vote_average") else movie?.online_rating
+
+                    // Resolve direct stream from CMOS or fallback
+                    var streamUrl = movie?.url
+                    try {
+                        val cmosReq = Request.Builder().url("https://cmos.raphsm4.dev/?tmdb=$tmdbId").header("User-Agent", "Mozilla/5.0").build()
+                        val cmosClient = client.newBuilder().connectTimeout(2500, TimeUnit.MILLISECONDS).readTimeout(2500, TimeUnit.MILLISECONDS).build()
+                        val cmosRes = cmosClient.newCall(cmosReq).execute()
+                        val cmosBody = cmosRes.body?.string()
+                        if (!cmosBody.isNullOrEmpty()) {
+                            val cmosJson = JSONObject(cmosBody)
+                            val directPlay = cmosJson.optString("directPlayUrl")
+                            if (directPlay.isNotEmpty()) {
+                                streamUrl = directPlay
+                            }
+                        }
+                    } catch (_: Exception) {}
+
+                    if (streamUrl.isNullOrEmpty() || streamUrl.contains("cmos.raphsm4.dev")) {
+                        streamUrl = "https://vidsrc.to/embed/movie/$tmdbId"
+                    }
+
+                    movie = (movie ?: CtgMovie(id = id, title = json.optString("title", "Movie"))).copy(
+                        overview = overview,
+                        poster_path = poster,
+                        backdrop_path = backdrop,
+                        release_date = releaseDate,
+                        online_rating = rating,
+                        casts = if (castList.isNotEmpty()) castList.joinToString(", ") else movie?.casts,
+                        genre = if (genresList.isNotEmpty()) genresList.joinToString(", ") else movie?.genre,
+                        url = streamUrl,
+                        tmdb_id = tmdbId
+                    )
+                    unifiedMoviesCache[id] = movie
+                    return@withContext movie
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "TMDB detail error for $tmdbId: ${e.message}")
+            }
         }
 
-        try {
-            val url = "https://www.ctghall.com/api/movies/$id"
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "MukulPlus-OTT/1.0")
-                .header("Accept", "application/json")
-                .build()
+        // B. If MLBD slug (starts with mKs_):
+        val mlbdSlug = movie?.file_path?.takeIf { it.startsWith("mKs_") }
+        if (mlbdSlug != null) {
+            try {
+                val req = Request.Builder()
+                    .url("$HAMYRA_API_BASE/mlbd/by-slug?slug=$mlbdSlug")
+                    .headers(buildHamyraHeaders())
+                    .build()
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val desc = json.optString("description", movie?.overview)
+                    val poster = json.optString("poster", movie?.poster_path)
+                    val g = json.optString("genre", movie?.genre)
+                    val castArr = json.optJSONArray("cast")
+                    val castList = mutableListOf<String>()
+                    if (castArr != null) {
+                        for (i in 0 until castArr.length()) {
+                            castList.add(castArr.optString(i))
+                        }
+                    }
+                    var streamUrl = movie?.url
+                    val watchSources = json.optJSONArray("watch_sources")
+                    if (watchSources != null && watchSources.length() > 0) {
+                        val firstSource = watchSources.optJSONObject(0)
+                        streamUrl = firstSource?.optString("url") ?: streamUrl
+                    }
+                    val episodes = json.optJSONArray("episodes")
+                    if (streamUrl.isNullOrEmpty() && episodes != null && episodes.length() > 0) {
+                        val ep1 = episodes.optJSONObject(0)
+                        val epSources = ep1?.optJSONArray("sources")
+                        if (epSources != null && epSources.length() > 0) {
+                            streamUrl = epSources.optJSONObject(0)?.optString("url")
+                        }
+                    }
 
-            val response = ctgClient.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext getFallbackMovieById(id)
-            val item = JSONObject(body)
-
-            val libObj = item.optJSONObject("Library")
-            val lib = if (libObj != null) {
-                CtgLibrary(
-                    id = libObj.optInt("id", 1),
-                    name = libObj.optString("name", "Movies"),
-                    type = libObj.optString("type", "MOVIE")
-                )
-            } else null
-
-            CtgMovie(
-                id = item.optLong("id", id),
-                title = item.optString("title", "Untitled"),
-                original_title = item.optString("original_title", null),
-                year = if (item.has("year") && !item.isNull("year")) item.optInt("year") else null,
-                poster_path = item.optString("poster_path", null),
-                backdrop_path = item.optString("backdrop_path", null),
-                release_date = item.optString("release_date", null),
-                online_rating = if (item.has("online_rating")) item.optDouble("online_rating") else null,
-                user_rating = if (item.has("user_rating")) item.optDouble("user_rating") else null,
-                genre = item.optString("genre", null),
-                casts = item.optString("casts", null),
-                overview = item.optString("overview", null),
-                trailers = item.optString("trailers", null),
-                url = item.optString("url", null),
-                file_path = item.optString("file_path", null),
-                imdb_id = item.optString("imdb_id", null),
-                tmdb_id = item.optString("tmdb_id", null),
-                Library = lib
-            )
-        } catch (e: Exception) {
-            ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
-            Log.d(TAG, "CtgHall detail unreachable for id $id (${e.message}). Serving fallback.")
-            getFallbackMovieById(id)
+                    movie = movie?.copy(
+                        overview = desc,
+                        poster_path = poster,
+                        genre = g,
+                        casts = if (castList.isNotEmpty()) castList.joinToString(", ") else movie?.casts,
+                        url = streamUrl
+                    )
+                    if (movie != null) {
+                        unifiedMoviesCache[id] = movie
+                        return@withContext movie
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "MLBD detail error: ${e.message}")
+            }
         }
+
+        // C. If MLSBD slug:
+        val mlsbdSlug = movie?.file_path?.takeIf { !it.startsWith("mKs_") && it.contains("-") }
+        if (mlsbdSlug != null) {
+            try {
+                val req = Request.Builder()
+                    .url("$HAMYRA_API_BASE/mlsbd/detail?slug=$mlsbdSlug")
+                    .headers(buildHamyraHeaders())
+                    .build()
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val poster = json.optString("poster", movie?.poster_path)
+                    val info = json.optString("info", movie?.overview)
+                    val downloads = json.optJSONArray("downloads")
+                    var downloadUrl = movie?.url
+                    if (downloads != null && downloads.length() > 0) {
+                        val d0 = downloads.optJSONObject(0)
+                        downloadUrl = d0?.optString("url") ?: downloadUrl
+                    }
+
+                    movie = movie?.copy(
+                        poster_path = poster,
+                        overview = if (info.isNotBlank()) info else movie?.overview,
+                        url = downloadUrl
+                    )
+                    if (movie != null) {
+                        unifiedMoviesCache[id] = movie
+                        return@withContext movie
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "MLSBD detail error: ${e.message}")
+            }
+        }
+
+        return@withContext movie
     }
 
-    // 3. CtgHall Menus & Filters
+    // 3. Menus & Categories (Instant response from rich defaultMenusData)
     suspend fun fetchCtgMenus(): CtgMenusData = withContext(Dispatchers.IO) {
-        if (System.currentTimeMillis() < ctgHallCooldownUntil) {
-            return@withContext defaultMenusData
-        }
-
-        try {
-            val url = "https://www.ctghall.com/api/menus"
-            val request = Request.Builder().url(url).build()
-            val response = ctgClient.newCall(request).execute()
-            val body = response.body?.string() ?: return@withContext defaultMenusData
-            val json = JSONObject(body)
-
-            val movieCategories = mutableListOf<CtgCategoryItem>()
-            val tvCategories = mutableListOf<CtgCategoryItem>()
-            val years = mutableListOf<Int>()
-            val movieGenres = mutableListOf<String>()
-            val tvGenres = mutableListOf<String>()
-
-            val categoriesObj = json.optJSONObject("categories")
-            if (categoriesObj != null) {
-                val movieArr = categoriesObj.optJSONArray("movie") ?: JSONArray()
-                for (i in 0 until movieArr.length()) {
-                    val cat = movieArr.optJSONObject(i) ?: continue
-                    movieCategories.add(
-                        CtgCategoryItem(
-                            id = cat.optInt("id"),
-                            name = cat.optString("name"),
-                            type = cat.optString("type"),
-                            parent = cat.optString("parent")
-                        )
-                    )
-                }
-                val tvArr = categoriesObj.optJSONArray("tv") ?: JSONArray()
-                for (i in 0 until tvArr.length()) {
-                    val cat = tvArr.optJSONObject(i) ?: continue
-                    tvCategories.add(
-                        CtgCategoryItem(
-                            id = cat.optInt("id"),
-                            name = cat.optString("name"),
-                            type = cat.optString("type"),
-                            parent = cat.optString("parent")
-                        )
-                    )
-                }
-            }
-
-            val yearsObj = json.optJSONObject("years")
-            if (yearsObj != null) {
-                val yearsArr = yearsObj.optJSONArray("movie") ?: JSONArray()
-                for (i in 0 until yearsArr.length()) {
-                    years.add(yearsArr.optInt(i))
-                }
-            }
-
-            val genresObj = json.optJSONObject("genres")
-            if (genresObj != null) {
-                val mgArr = genresObj.optJSONArray("movie") ?: JSONArray()
-                for (i in 0 until mgArr.length()) {
-                    movieGenres.add(mgArr.optString(i))
-                }
-                val tgArr = genresObj.optJSONArray("tv") ?: JSONArray()
-                for (i in 0 until tgArr.length()) {
-                    tvGenres.add(tgArr.optString(i))
-                }
-            }
-
-            CtgMenusData(
-                movieCategories = movieCategories,
-                tvCategories = tvCategories,
-                years = years,
-                movieGenres = movieGenres,
-                tvGenres = tvGenres
-            )
-        } catch (e: Exception) {
-            ctgHallCooldownUntil = System.currentTimeMillis() + CTG_HALL_FAILURE_COOLDOWN_MS
-            Log.d(TAG, "CtgHall menus unreachable (${e.message}). Serving default menus.")
-            defaultMenusData
-        }
+        defaultMenusData
     }
 
     // 4. SorryBroRewards Extractor Providers
@@ -979,15 +1386,82 @@ object ApiClient {
         return list.find { it.id == id }
     }
 
+    private val bongoShowsCache = java.util.concurrent.ConcurrentHashMap<String, BongoShow>()
+
+    suspend fun fetchBongoShowEpisodes(systemId: String): BongoShow? = withContext(Dispatchers.IO) {
+        if (bongoShowsCache.containsKey(systemId)) {
+            return@withContext bongoShowsCache[systemId]
+        }
+        val token = getHamyraToken() ?: return@withContext null
+        try {
+            val req = Request.Builder()
+                .url("$HAMYRA_API_BASE/bongo/show-episodes?systemId=$systemId")
+                .header("Authorization", "Bearer $token")
+                .header("Origin", HAMYRA_ORIGIN)
+                .header("Referer", "$HAMYRA_ORIGIN/")
+                .header("User-Agent", HAMYRA_USER_AGENT)
+                .build()
+
+            val res = client.newCall(req).execute()
+            val body = res.body?.string() ?: return@withContext null
+            val json = JSONObject(body)
+            val pTitle = json.optString("programTitle", json.optString("title", "Bongo Series"))
+            val season = json.optInt("season", 1)
+            val maxSeason = json.optInt("maxSeason", 1)
+            val count = json.optInt("item_count", 0)
+            val itemsArr = json.optJSONArray("items") ?: JSONArray()
+            val episodeList = mutableListOf<BongoEpisode>()
+
+            for (i in 0 until itemsArr.length()) {
+                val itemObj = itemsArr.optJSONObject(i) ?: continue
+                val id = itemObj.optString("id")
+                val sId = itemObj.optString("systemId", id)
+                val epTitle = itemObj.optString("title", "Episode ${i + 1}")
+                val thumb = itemObj.optString("thumbnail").ifEmpty { itemObj.optString("landscape") }
+                val dur = itemObj.optString("duration", null)
+                val epNum = itemObj.optInt("episodeNumber", i + 1)
+                episodeList.add(
+                    BongoEpisode(
+                        id = id,
+                        systemId = sId,
+                        title = epTitle,
+                        thumbnail = thumb,
+                        duration = dur,
+                        season = season,
+                        episodeNumber = epNum
+                    )
+                )
+            }
+
+            val show = BongoShow(
+                systemId = systemId,
+                programTitle = pTitle,
+                season = season,
+                maxSeason = maxSeason,
+                itemCount = if (count > 0) count else episodeList.size,
+                items = episodeList
+            )
+            bongoShowsCache[systemId] = show
+            show
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching Bongo show $systemId", e)
+            null
+        }
+    }
+
     /**
      * Resolves a Bongo video URL or ID into the direct playable HLS stream URL (e.g. px.talkoraai.com)
      */
     fun resolveBongoStreamUrl(urlOrId: String): String {
+        if (urlOrId.contains("px.talkoraai.com") || urlOrId.contains(".m3u8") || urlOrId.contains(".mp4") || urlOrId.contains(".mkv")) {
+            return urlOrId
+        }
+
         val bongoId = when {
             urlOrId.contains("id=") -> urlOrId.substringAfter("id=").substringBefore("&")
             urlOrId.contains("/bongo/hls/") -> urlOrId.substringAfter("/bongo/hls/").substringBefore("?")
-            urlOrId.startsWith("http") -> urlOrId.substringAfterLast("/")
-            else -> urlOrId
+            !urlOrId.startsWith("http") -> urlOrId
+            else -> ""
         }
 
         if (bongoId.isBlank()) return urlOrId

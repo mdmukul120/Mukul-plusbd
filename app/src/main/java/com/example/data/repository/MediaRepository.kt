@@ -103,6 +103,10 @@ class MediaRepository(context: Context) {
         return list
     }
 
+    suspend fun getBongoShow(systemId: String): BongoShow? {
+        return ApiClient.fetchBongoShowEpisodes(systemId)
+    }
+
     suspend fun getMovieById(id: Long): CtgMovie? {
         if (id < 0) {
             return ApiClient.getBongoMovieById(id) ?: _bongoVideos.value.find { it.id == id }

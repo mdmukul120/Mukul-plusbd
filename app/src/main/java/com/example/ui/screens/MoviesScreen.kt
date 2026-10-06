@@ -200,7 +200,84 @@ fun MoviesScreen(
             ) {
                 item {
                     FilterChipItem(
-                        label = "🔥 Bongo BD (বঙ্গ)",
+                        label = "🔥 ট্রেন্ডিং (Trending)",
+                        selected = !isBongoSelected && (selectedCategory == null || selectedCategory?.id == 1),
+                        onClick = {
+                            isBongoSelected = false
+                            selectedCategory = CtgCategoryItem(1, "🔥 Trending", "TRENDING")
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "🎬 হিন্দি ডাবড (Hindi Dubbed)",
+                        selected = !isBongoSelected && selectedCategory?.id == 2,
+                        onClick = {
+                            isBongoSelected = false
+                            selectedCategory = CtgCategoryItem(2, "🎬 Hindi Dubbed", "LANGUAGE")
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "✨ বলিউড (Bollywood)",
+                        selected = !isBongoSelected && selectedCategory?.id == 3,
+                        onClick = {
+                            isBongoSelected = false
+                            selectedCategory = CtgCategoryItem(3, "✨ Bollywood", "CATEGORY")
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "🇧🇩 বাংলা সিনেমা (Bangla)",
+                        selected = !isBongoSelected && selectedCategory?.id == 5,
+                        onClick = {
+                            isBongoSelected = false
+                            selectedCategory = CtgCategoryItem(5, "🇧🇩 Bangla Movies", "CATEGORY")
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "🎧 ডুয়েল অডিও (Dual Audio)",
+                        selected = !isBongoSelected && selectedCategory?.id == 4,
+                        onClick = {
+                            isBongoSelected = false
+                            selectedCategory = CtgCategoryItem(4, "🎧 Dual Audio", "LANGUAGE")
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "💥 সাউথ ইন্ডিয়ান (South)",
+                        selected = !isBongoSelected && selectedCategory?.id == 6,
+                        onClick = {
+                            isBongoSelected = false
+                            selectedCategory = CtgCategoryItem(6, "💥 South Indian", "LANGUAGE")
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "🌟 হলিউড (Hollywood)",
+                        selected = !isBongoSelected && selectedCategory?.id == 7,
+                        onClick = {
+                            isBongoSelected = false
+                            selectedCategory = CtgCategoryItem(7, "🌟 Hollywood", "CATEGORY")
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "❤️ বঙ্গ বিডি (Bongo)",
                         selected = isBongoSelected,
                         onClick = {
                             isBongoSelected = true
@@ -211,55 +288,44 @@ fun MoviesScreen(
                 }
                 item {
                     FilterChipItem(
-                        label = "English",
-                        selected = !isBongoSelected && (selectedCategory == null || selectedCategory?.id == 1),
+                        label = "📺 বাংলা ডাবড (Dubbed)",
+                        selected = !isBongoSelected && selectedCategory?.id == 8,
                         onClick = {
                             isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(1, "English Movies", "MOVIE")
+                            selectedCategory = CtgCategoryItem(8, "📺 Bangla Dubbed", "LANGUAGE")
                             currentPage = 1
                         }
                     )
                 }
                 item {
                     FilterChipItem(
-                        label = "Bollywood",
-                        selected = !isBongoSelected && selectedCategory?.id == 4,
+                        label = "🎭 নাটক ও সিরিজ (Drama)",
+                        selected = !isBongoSelected && selectedCategory?.id == 9,
                         onClick = {
                             isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(4, "Bollywood Movies", "MOVIE")
+                            selectedCategory = CtgCategoryItem(9, "🎭 Natok & Series", "CATEGORY")
                             currentPage = 1
                         }
                     )
                 }
                 item {
                     FilterChipItem(
-                        label = "Bangla",
-                        selected = !isBongoSelected && selectedCategory?.id == 6,
+                        label = "⛩️ এনিমে ও কোরিয়ান (Asian)",
+                        selected = !isBongoSelected && selectedCategory?.id == 10,
                         onClick = {
                             isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(6, "Bangla Movies", "MOVIE")
+                            selectedCategory = CtgCategoryItem(10, "⛩️ Anime & Korean", "CATEGORY")
                             currentPage = 1
                         }
                     )
                 }
                 item {
                     FilterChipItem(
-                        label = "South Indian",
-                        selected = !isBongoSelected && selectedCategory?.id == 7,
+                        label = "🌏 তামিল ও তেলেগু",
+                        selected = !isBongoSelected && selectedCategory?.id == 11,
                         onClick = {
                             isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(7, "South Indian Movies", "MOVIE")
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "Anime & Asian",
-                        selected = !isBongoSelected && selectedCategory?.id == 5,
-                        onClick = {
-                            isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(5, "Asian & Anime", "MOVIE")
+                            selectedCategory = CtgCategoryItem(11, "🌏 Tamil & Telugu", "LANGUAGE")
                             currentPage = 1
                         }
                     )
