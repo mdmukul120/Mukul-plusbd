@@ -1,19 +1,20 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.FilterList
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,6 +30,7 @@ import com.example.data.repository.MediaRepository
 import com.example.ui.components.FilterBottomSheet
 import com.example.ui.components.FilterChipItem
 import com.example.ui.components.MoviePosterCard
+import com.example.ui.components.VideoPlayerView
 import com.example.ui.theme.*
 
 @Composable
@@ -42,21 +44,24 @@ fun MoviesScreen(
     var isLoading by remember { mutableStateOf(true) }
     var currentPage by remember { mutableIntStateOf(1) }
     var totalPages by remember { mutableIntStateOf(1) }
+    var totalOttCount by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var debouncedQuery by remember { mutableStateOf("") }
 
     // Filter states
     val menusData by mediaRepository.menusData.collectAsState()
     var selectedCategory by remember { mutableStateOf<CtgCategoryItem?>(null) }
-    var isBongoSelected by remember { mutableStateOf(false) }
-    var isTapmadSelected by remember { mutableStateOf(false) }
-    var specialSource by remember { mutableStateOf<String?>(null) } // "TURKISH", "KOREAN", "BANGLASUB", "MLSBD", "MLBD"
+    var isBongoSelected by remember { mutableStateOf(true) } // Default to OTT Bangla movies!
+    var selectedBongoGenre by remember { mutableStateOf("সব (All)") }
     var selectedYear by remember { mutableStateOf<Int?>(null) }
     var selectedGenre by remember { mutableStateOf<String?>(null) }
     var selectedSort by remember { mutableStateOf("createdAt") }
     var showFilterSheet by remember { mutableStateOf(false) }
 
-    // Debounce search query to avoid firing on every keystroke
+    // Active in-screen Video Player
+    var activePlayingMovie by remember { mutableStateOf<CtgMovie?>(null) }
+
+    // Debounce search query
     LaunchedEffect(searchQuery) {
         if (searchQuery.isBlank()) {
             debouncedQuery = ""
@@ -72,51 +77,33 @@ fun MoviesScreen(
         mediaRepository.getMenus()
     }
 
-    LaunchedEffect(selectedCategory, isBongoSelected, isTapmadSelected, specialSource, selectedYear, selectedGenre, selectedSort, currentPage, debouncedQuery) {
+    LaunchedEffect(selectedCategory, isBongoSelected, selectedBongoGenre, selectedYear, selectedGenre, selectedSort, currentPage, debouncedQuery) {
         isLoading = true
         if (isBongoSelected) {
             val allBongo = mediaRepository.getBongoVideos()
-            movies = if (debouncedQuery.isNotBlank()) {
-                allBongo.filter {
-                    it.title.contains(debouncedQuery, ignoreCase = true) ||
-                    (it.casts?.contains(debouncedQuery, ignoreCase = true) == true) ||
-                    (it.genre?.contains(debouncedQuery, ignoreCase = true) == true)
+            var filtered = allBongo
+            if (debouncedQuery.isNotBlank()) {
+                val q = debouncedQuery.trim()
+                filtered = filtered.filter {
+                    it.title.contains(q, ignoreCase = true) ||
+                    (it.casts?.contains(q, ignoreCase = true) == true) ||
+                    (it.genre?.contains(q, ignoreCase = true) == true) ||
+                    (it.overview?.contains(q, ignoreCase = true) == true)
                 }
-            } else {
-                allBongo
             }
-            totalPages = 1
-        } else if (isTapmadSelected) {
-            val allTapmad = mediaRepository.getTapmadEntertainment()
-            movies = if (debouncedQuery.isNotBlank()) {
-                allTapmad.filter {
-                    it.title.contains(debouncedQuery, ignoreCase = true) ||
-                    (it.overview?.contains(debouncedQuery, ignoreCase = true) == true)
+            if (selectedBongoGenre != "সব (All)") {
+                filtered = filtered.filter {
+                    it.genre?.contains(selectedBongoGenre, ignoreCase = true) == true ||
+                    it.title.contains(selectedBongoGenre, ignoreCase = true) ||
+                    it.original_title?.contains(selectedBongoGenre, ignoreCase = true) == true
                 }
-            } else {
-                allTapmad
             }
-            totalPages = 1
-        } else if (specialSource != null) {
-            val q = when (specialSource) {
-                "TURKISH" -> debouncedQuery.ifBlank { "Turkish" }
-                "KOREAN" -> debouncedQuery.ifBlank { "Korean" }
-                "BANGLASUB" -> debouncedQuery.ifBlank { "Bangla Sub" }
-                "MLSBD" -> debouncedQuery.ifBlank { "MLSBD" }
-                "MLBD" -> debouncedQuery.ifBlank { "MLBD" }
-                else -> debouncedQuery
-            }
-            val res = ApiClient.fetchCtgMovies(
-                library = if (specialSource == "KOREAN") 10 else null,
-                page = currentPage,
-                sort = selectedSort,
-                sortOrder = "DESC",
-                search = q.ifBlank { null },
-                year = selectedYear,
-                genre = if (specialSource == "TURKISH") "Turkish" else selectedGenre
-            )
-            movies = res.data
-            totalPages = res.pages.coerceAtLeast(1)
+            totalOttCount = filtered.size
+            val pageSize = 30
+            val computedPages = ((filtered.size + pageSize - 1) / pageSize).coerceAtLeast(1)
+            totalPages = computedPages
+            val pageIndex = (currentPage - 1).coerceIn(0, computedPages - 1)
+            movies = filtered.drop(pageIndex * pageSize).take(pageSize)
         } else {
             val targetLibrary = if (debouncedQuery.isNotBlank() && selectedCategory == null) null else (selectedCategory?.id ?: 1)
             var res = ApiClient.fetchCtgMovies(
@@ -150,8 +137,66 @@ fun MoviesScreen(
             .fillMaxSize()
             .background(CinemaBackground)
     ) {
+        // Active In-Screen Video Player Banner (Plays directly with VLC Video Player!)
+        AnimatedVisibility(visible = activePlayingMovie != null) {
+            activePlayingMovie?.let { movie ->
+                val streamUrl = movie.getFullStreamUrl() ?: ""
+                if (streamUrl.isNotBlank()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black)
+                    ) {
+                        VideoPlayerView(
+                            videoUrl = streamUrl,
+                            title = movie.title,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(250.dp),
+                            onClose = { activePlayingMovie = null }
+                        )
+                        Surface(
+                            color = CinemaSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = movie.title,
+                                        color = TextPrimary,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = "VLC প্লেয়ারে চলছে • ${movie.genre ?: "বাংলা সিনেমা"}",
+                                        color = CyanAccent,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                                Button(
+                                    onClick = { onSelectMovie(movie.id) },
+                                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                ) {
+                                    Text("বিস্তারিত (Details)", fontSize = 11.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Search & Filter header
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -163,7 +208,7 @@ fun MoviesScreen(
                         shape = RoundedCornerShape(12.dp),
                         color = CinemaSurfaceVariant,
                         border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                        modifier = Modifier.size(50.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
@@ -181,7 +226,7 @@ fun MoviesScreen(
                         searchQuery = it
                         currentPage = 1
                     },
-                    placeholder = { Text("মুভি খুঁজুন (Search Movies)", color = TextMuted, fontSize = 12.sp) },
+                    placeholder = { Text("মুভি, নাটক বা অভিনেতার নাম খুঁজুন...", color = TextMuted, fontSize = 12.sp) },
                     leadingIcon = {
                         Icon(imageVector = Icons.Default.Search, contentDescription = null, tint = TextMuted)
                     },
@@ -212,7 +257,7 @@ fun MoviesScreen(
                     shape = RoundedCornerShape(12.dp),
                     color = if (selectedCategory != null || selectedYear != null || selectedGenre != null) AuthBrandPrimary else CinemaSurfaceVariant,
                     border = androidx.compose.foundation.BorderStroke(1.dp, if (selectedCategory != null || selectedYear != null || selectedGenre != null) AuthBrandPrimary else CinemaBorder),
-                    modifier = Modifier.size(50.dp)
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
@@ -224,93 +269,16 @@ fun MoviesScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Quick Category Chips
+            // Main Category Chips
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 item {
                     FilterChipItem(
-                        label = "🔥 ট্রেন্ডিং (Trending)",
-                        selected = !isBongoSelected && (selectedCategory == null || selectedCategory?.id == 1),
-                        onClick = {
-                            isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(1, "🔥 Trending", "TRENDING")
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "🎬 হিন্দি ডাবড (Hindi Dubbed)",
-                        selected = !isBongoSelected && selectedCategory?.id == 2,
-                        onClick = {
-                            isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(2, "🎬 Hindi Dubbed", "LANGUAGE")
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "✨ বলিউড (Bollywood)",
-                        selected = !isBongoSelected && selectedCategory?.id == 3,
-                        onClick = {
-                            isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(3, "✨ Bollywood", "CATEGORY")
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "🇧🇩 বাংলা সিনেমা (Bangla)",
-                        selected = !isBongoSelected && selectedCategory?.id == 5,
-                        onClick = {
-                            isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(5, "🇧🇩 Bangla Movies", "CATEGORY")
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "🎧 ডুয়েল অডিও (Dual Audio)",
-                        selected = !isBongoSelected && selectedCategory?.id == 4,
-                        onClick = {
-                            isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(4, "🎧 Dual Audio", "LANGUAGE")
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "💥 সাউথ ইন্ডিয়ান (South)",
-                        selected = !isBongoSelected && selectedCategory?.id == 6,
-                        onClick = {
-                            isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(6, "💥 South Indian", "LANGUAGE")
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "🌟 হলিউড (Hollywood)",
-                        selected = !isBongoSelected && selectedCategory?.id == 7,
-                        onClick = {
-                            isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(7, "🌟 Hollywood", "CATEGORY")
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "❤️ বঙ্গ বিডি (Bongo)",
+                        label = "🔥 বাংলা ওটিটি (OTT)",
                         selected = isBongoSelected,
                         onClick = {
                             isBongoSelected = true
@@ -321,137 +289,101 @@ fun MoviesScreen(
                 }
                 item {
                     FilterChipItem(
-                        label = "📺 বাংলা ডাবড (Dubbed)",
-                        selected = !isBongoSelected && selectedCategory?.id == 8,
+                        label = "English",
+                        selected = !isBongoSelected && (selectedCategory == null || selectedCategory?.id == 1),
                         onClick = {
                             isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(8, "📺 Bangla Dubbed", "LANGUAGE")
+                            selectedCategory = CtgCategoryItem(1, "English Movies", "MOVIE")
                             currentPage = 1
                         }
                     )
                 }
                 item {
                     FilterChipItem(
-                        label = "🎭 নাটক ও সিরিজ (Drama)",
-                        selected = !isBongoSelected && selectedCategory?.id == 9,
+                        label = "Bollywood",
+                        selected = !isBongoSelected && selectedCategory?.id == 4,
                         onClick = {
                             isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(9, "🎭 Natok & Series", "CATEGORY")
+                            selectedCategory = CtgCategoryItem(4, "Bollywood Movies", "MOVIE")
                             currentPage = 1
                         }
                     )
                 }
                 item {
                     FilterChipItem(
-                        label = "⛩️ এনিমে ও কোরিয়ান (Asian)",
-                        selected = !isBongoSelected && selectedCategory?.id == 10,
+                        label = "Bangla",
+                        selected = !isBongoSelected && selectedCategory?.id == 6,
                         onClick = {
                             isBongoSelected = false
-                            selectedCategory = CtgCategoryItem(10, "⛩️ Anime & Korean", "CATEGORY")
+                            selectedCategory = CtgCategoryItem(6, "Bangla Movies", "MOVIE")
                             currentPage = 1
                         }
                     )
                 }
                 item {
                     FilterChipItem(
-                        label = "🌏 তামিল ও তেলেগু",
-                        selected = !isBongoSelected && !isTapmadSelected && specialSource == null && selectedCategory?.id == 11,
+                        label = "South Indian",
+                        selected = !isBongoSelected && selectedCategory?.id == 7,
                         onClick = {
                             isBongoSelected = false
-                            isTapmadSelected = false
-                            specialSource = null
-                            selectedCategory = CtgCategoryItem(11, "🌏 Tamil & Telugu", "LANGUAGE")
+                            selectedCategory = CtgCategoryItem(7, "South Indian Movies", "MOVIE")
                             currentPage = 1
                         }
                     )
                 }
                 item {
                     FilterChipItem(
-                        label = "🇹🇷 তুর্কি ড্রামা (Turkish)",
-                        selected = specialSource == "TURKISH",
+                        label = "Anime & Asian",
+                        selected = !isBongoSelected && selectedCategory?.id == 5,
                         onClick = {
                             isBongoSelected = false
-                            isTapmadSelected = false
-                            selectedCategory = null
-                            specialSource = "TURKISH"
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "🇰🇷 কে-ড্রামা (K-Drama)",
-                        selected = specialSource == "KOREAN",
-                        onClick = {
-                            isBongoSelected = false
-                            isTapmadSelected = false
-                            selectedCategory = null
-                            specialSource = "KOREAN"
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "📺 ট্যাপম্যাড হাব (Tapmad)",
-                        selected = isTapmadSelected,
-                        onClick = {
-                            isBongoSelected = false
-                            specialSource = null
-                            selectedCategory = null
-                            isTapmadSelected = true
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "🔤 বাংলা সাবটাইটেল (Bangla Sub)",
-                        selected = specialSource == "BANGLASUB",
-                        onClick = {
-                            isBongoSelected = false
-                            isTapmadSelected = false
-                            selectedCategory = null
-                            specialSource = "BANGLASUB"
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "⚡ MLSBD কালেকশন",
-                        selected = specialSource == "MLSBD",
-                        onClick = {
-                            isBongoSelected = false
-                            isTapmadSelected = false
-                            selectedCategory = null
-                            specialSource = "MLSBD"
-                            currentPage = 1
-                        }
-                    )
-                }
-                item {
-                    FilterChipItem(
-                        label = "💎 MLBD ড্রাইভ",
-                        selected = specialSource == "MLBD",
-                        onClick = {
-                            isBongoSelected = false
-                            isTapmadSelected = false
-                            selectedCategory = null
-                            specialSource = "MLBD"
+                            selectedCategory = CtgCategoryItem(5, "Asian & Anime", "MOVIE")
                             currentPage = 1
                         }
                     )
                 }
             }
+
+            // OTT Sub-Category Chips (shown when OTT is selected)
+            if (isBongoSelected) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val ottSubGenres = listOf("সব (All)", "সিনেমা", "নাটক", "ওয়েব সিরিজ", "কমেডি", "থ্রিলার", "রোমান্স", "অ্যাকশন")
+                    ottSubGenres.forEach { subGenre ->
+                        val isSelected = selectedBongoGenre == subGenre
+                        Surface(
+                            onClick = {
+                                selectedBongoGenre = subGenre
+                                currentPage = 1
+                            },
+                            shape = RoundedCornerShape(14.dp),
+                            color = if (isSelected) CyanAccent else CinemaSurfaceVariant,
+                            modifier = Modifier.height(28.dp)
+                        ) {
+                            Text(
+                                text = subGenre,
+                                color = if (isSelected) Color.Black else TextSecondary,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                            )
+                        }
+                    }
+                }
+            }
         }
 
-        // Active Filter Banner if any
+        // Active Filter Banner
         if (selectedYear != null || selectedGenre != null) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -479,33 +411,44 @@ fun MoviesScreen(
             }
         }
 
-        // Movies Grid
+        // Movies Grid & Content
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = BrandRed)
             }
         } else if (movies.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("কোনো মুভি পাওয়া যায়নি", color = TextSecondary)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.MovieFilter, contentDescription = null, tint = TextMuted, modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("কোনো মুভি পাওয়া যায়নি", color = TextSecondary, fontSize = 14.sp)
+                }
             }
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 110.dp),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
                 modifier = Modifier.fillMaxSize()
             ) {
-                items(movies) { movie ->
+                items(movies, key = { it.id }) { movie ->
                     MoviePosterCard(
                         movie = movie,
-                        onClick = { onSelectMovie(movie.id) },
+                        onClick = {
+                            if (isBongoSelected) {
+                                // Instantly start VLC playback in top banner or open detail
+                                activePlayingMovie = movie
+                            } else {
+                                onSelectMovie(movie.id)
+                            }
+                        },
                         width = 115,
                         height = 170
                     )
                 }
 
-                // Pagination
+                // Pagination Row
                 item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                     Row(
                         modifier = Modifier
@@ -517,25 +460,31 @@ fun MoviesScreen(
                         if (currentPage > 1) {
                             OutlinedButton(
                                 onClick = { currentPage -= 1 },
-                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Previous")
+                                Icon(Icons.Default.ChevronLeft, contentDescription = "Prev", modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("আগের পেজ", fontSize = 12.sp)
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                         }
                         Text(
-                            text = "Page $currentPage / $totalPages",
+                            text = "পেজ $currentPage / $totalPages",
                             color = TextSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                         if (currentPage < totalPages) {
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Button(
                                 onClick = { currentPage += 1 },
-                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed)
+                                colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                                shape = RoundedCornerShape(8.dp)
                             ) {
-                                Text("Next")
+                                Text("পরের পেজ", fontSize = 12.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(Icons.Default.ChevronRight, contentDescription = "Next", modifier = Modifier.size(18.dp))
                             }
                         }
                     }
