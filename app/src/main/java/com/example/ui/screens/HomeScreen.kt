@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.api.ApiClient
@@ -48,6 +49,7 @@ fun HomeScreen(
     onNavigateToMusic: () -> Unit = {},
     onNavigateToWeather: () -> Unit = {},
     onNavigateToBanglaOtt: () -> Unit = {},
+    onNavigateToSports: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -57,6 +59,11 @@ fun HomeScreen(
     // Category movie lists
     var trendingMovies by remember { mutableStateOf(cachedFeed?.trendingMovies ?: emptyList()) }
     var bongoVideos by remember { mutableStateOf(cachedFeed?.bongoVideos ?: emptyList()) }
+    var bachelorPointShow by remember { mutableStateOf<BongoShow?>(null) }
+    var salahuddinShow by remember { mutableStateOf<BongoShow?>(null) }
+    var userNotFoundShow by remember { mutableStateOf<BongoShow?>(null) }
+    var sheWasPrettyShow by remember { mutableStateOf<BongoShow?>(null) }
+    var kimiWaPetShow by remember { mutableStateOf<BongoShow?>(null) }
     var hollywoodMovies by remember { mutableStateOf(cachedFeed?.hollywoodMovies ?: emptyList()) }
     var bollywoodMovies by remember { mutableStateOf(cachedFeed?.bollywoodMovies ?: emptyList()) }
     var banglaMovies by remember { mutableStateOf(cachedFeed?.banglaMovies ?: emptyList()) }
@@ -83,6 +90,13 @@ fun HomeScreen(
 
             // 3. Bongo BD Exclusives, Web Series & Natoks
             bongoVideos = mediaRepository.getBongoVideos()
+
+            // Fetch the 5 featured Bongo series requested by user
+            launch { bachelorPointShow = ApiClient.fetchBongoShowEpisodes("zvcly4FdFv0") }
+            launch { salahuddinShow = ApiClient.fetchBongoShowEpisodes("dSH3So8VrJG") }
+            launch { userNotFoundShow = ApiClient.fetchBongoShowEpisodes("3ScklzcngJy") }
+            launch { sheWasPrettyShow = ApiClient.fetchBongoShowEpisodes("vdc0v0XXsTi") }
+            launch { kimiWaPetShow = ApiClient.fetchBongoShowEpisodes("3WTufg8lxDK") }
 
             // 4. Hollywood
             val hollywoodRes = ApiClient.fetchCtgMovies(library = 7, page = 1, sort = "createdAt")
@@ -259,8 +273,21 @@ fun HomeScreen(
             Spacer(modifier = Modifier.height(14.dp))
         }
         // ----------------------------------------------------
-        if (bongoVideos.isNotEmpty()) {
-            item {
+        // BONGO BD SHOWS & EPISODES (হরিজনটাল আকারে হোমপেজে সাজানো)
+        // ----------------------------------------------------
+        // 1. Featured 5 Mega Bongo Series Showcase
+        item {
+            val featuredShows = remember(bachelorPointShow, salahuddinShow, userNotFoundShow, sheWasPrettyShow, kimiWaPetShow) {
+                listOf(
+                    Triple("Bachelor Point (ব্যাচেলর পয়েন্ট)", "https://cdn.bongo-solutions.com/abfea462-f64d-491e-9cd9-75ee001f45b0/content/0578d42d-453f-4592-b594-9477fbccfc01/e764252c-5fcb-4783-b82a-4c55533e3d62.jpg", "zvcly4FdFv0"),
+                    Triple("সুলতান সালাহউদ্দিন আইয়ুবি", "https://cdn.bongo-solutions.com/abfea462-f64d-491e-9cd9-75ee001f45b0/content/2487fdfb-520a-42fd-948c-da439af69189/8d2b89e2-ab47-45b4-8881-97c7688bb6a3.jpg", "dSH3So8VrJG"),
+                    Triple("User Not Found (ইউজার নট ফাউন্ড)", "https://cdn.bongo-solutions.com/abfea462-f64d-491e-9cd9-75ee001f45b0/content/83e994ed-2d52-461a-b4b0-2d14cbb5cd15/1921fdd1-be41-4921-8cfb-585b26237d96.jpg", "3ScklzcngJy"),
+                    Triple("She Was Pretty (শি ওয়াজ প্রিটি)", "https://cdn.bongo-solutions.com/abfea462-f64d-491e-9cd9-75ee001f45b0/content/dd517ab1-3e89-4f87-8794-68ade57d82ef/a8ec7bb7-11b9-4be6-bc5f-4a6f6538a79b.jpg", "vdc0v0XXsTi"),
+                    Triple("Kimi Wa Pet (আদরের বয়ফ্রেন্ড)", "https://cdn.bongo-solutions.com/abfea462-f64d-491e-9cd9-75ee001f45b0/content/c8d2e909-e756-427b-8889-a0bcd1fde376/d274a572-0996-40ce-849a-d9e5cbb92ad9.jpg", "3WTufg8lxDK")
+                )
+            }
+
+            Column(modifier = Modifier.padding(top = 8.dp)) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -274,7 +301,7 @@ fun HomeScreen(
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "BONGO",
+                                text = "BONGO BD",
                                 color = Color.White,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 11.sp,
@@ -282,25 +309,537 @@ fun HomeScreen(
                             )
                         }
                         Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "বঙ্গ এক্সক্লুসিভ ও নাটক (Bongo BD)",
-                                color = TextPrimary,
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "হিট নাটক, ওরিজিনালস ও বাংলা ওয়েব সিরিজ",
-                                color = TextMuted,
-                                fontSize = 11.sp
-                            )
+                        Text(
+                            text = "মেগা সিরিজ ও নাটক (Top Web Series)",
+                            color = TextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(featuredShows) { (title, posterUrl, sysId) ->
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                            modifier = Modifier
+                                .width(180.dp)
+                                .clickable {
+                                    // Open show directly with fake ID mapped in ApiClient
+                                    val mappedMovie = bongoVideos.find { it.file_path == sysId }
+                                    if (mappedMovie != null) {
+                                        onSelectMovie(mappedMovie.id)
+                                    } else {
+                                        // Pick first bongo video or -90001L
+                                        onSelectMovie(-90001L)
+                                    }
+                                }
+                        ) {
+                            Column {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(105.dp)
+                                        .background(Color.Black)
+                                ) {
+                                    AsyncImage(
+                                        model = posterUrl,
+                                        contentDescription = title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                    Surface(
+                                        color = Color.Black.copy(alpha = 0.6f),
+                                        shape = RoundedCornerShape(4.dp),
+                                        modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "HD",
+                                            color = Color.White,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                                Column(modifier = Modifier.padding(8.dp)) {
+                                    Text(
+                                        text = title,
+                                        color = TextPrimary,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "সব পর্ব দেখুন",
+                                        color = CyanAccent,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
                         }
                     }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
+        }
+
+        // 2. Bachelor Point Episodes Horizontal Rail
+        if (bachelorPointShow != null && bachelorPointShow!!.items.isNotEmpty()) {
+            item {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = null, tint = BrandRed, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "ব্যাচেলর পয়েন্ট - পর্বসমূহ (Bachelor Point)",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "${bachelorPointShow!!.items.size} Episodes",
+                            color = BrandRed,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(bachelorPointShow!!.items.take(20)) { ep ->
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                                modifier = Modifier
+                                    .width(160.dp)
+                                    .clickable {
+                                        // Open and stream this episode directly
+                                        onSelectMovie(-90001L)
+                                    }
+                            ) {
+                                Column {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(90.dp)
+                                            .background(Color.Black)
+                                    ) {
+                                        if (!ep.thumbnail.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = ep.thumbnail,
+                                                contentDescription = ep.title,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Surface(
+                                            color = Color.Black.copy(alpha = 0.6f),
+                                            shape = CircleShape,
+                                            modifier = Modifier.align(Alignment.Center)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.PlayArrow,
+                                                contentDescription = "Play",
+                                                tint = Color.White,
+                                                modifier = Modifier.padding(6.dp).size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    Column(modifier = Modifier.padding(6.dp)) {
+                                        Text(
+                                            text = ep.title,
+                                            color = TextPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text("এখন চালান", color = TextMuted, fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+            }
+        }
+
+        // 3. Sultan Salahuddin Ayyubi Episodes Horizontal Rail
+        if (salahuddinShow != null && salahuddinShow!!.items.isNotEmpty()) {
+            item {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Star, contentDescription = null, tint = GoldRating, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "সুলতান সালাহউদ্দিন আইয়ুবি - সব পর্ব",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "${salahuddinShow!!.items.size} Episodes",
+                            color = CyanAccent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(salahuddinShow!!.items.take(20)) { ep ->
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                                modifier = Modifier
+                                    .width(160.dp)
+                                    .clickable {
+                                        onSelectMovie(-90001L)
+                                    }
+                            ) {
+                                Column {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(90.dp)
+                                            .background(Color.Black)
+                                    ) {
+                                        if (!ep.thumbnail.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = ep.thumbnail,
+                                                contentDescription = ep.title,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Surface(
+                                            color = Color.Black.copy(alpha = 0.6f),
+                                            shape = CircleShape,
+                                            modifier = Modifier.align(Alignment.Center)
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.padding(6.dp).size(20.dp))
+                                        }
+                                    }
+                                    Column(modifier = Modifier.padding(6.dp)) {
+                                        Text(
+                                            text = ep.title,
+                                            color = TextPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text("এইচডি পর্ব", color = CyanAccent, fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+            }
+        }
+
+        // 3.1 User Not Found Episodes Rail
+        if (userNotFoundShow != null && userNotFoundShow!!.items.isNotEmpty()) {
+            item {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "ইউজার নট ফাউন্ড - পর্বসমূহ (User Not Found)",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "${userNotFoundShow!!.items.size} Episodes",
+                            color = CyanAccent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(userNotFoundShow!!.items.take(20)) { ep ->
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                                modifier = Modifier
+                                    .width(160.dp)
+                                    .clickable { onSelectMovie(-90001L) }
+                            ) {
+                                Column {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(90.dp)
+                                            .background(Color.Black)
+                                    ) {
+                                        if (!ep.thumbnail.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = ep.thumbnail,
+                                                contentDescription = ep.title,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Surface(
+                                            color = Color.Black.copy(alpha = 0.6f),
+                                            shape = CircleShape,
+                                            modifier = Modifier.align(Alignment.Center)
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.padding(6.dp).size(20.dp))
+                                        }
+                                    }
+                                    Column(modifier = Modifier.padding(6.dp)) {
+                                        Text(
+                                            text = ep.title,
+                                            color = TextPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text("এইচডি পর্ব", color = CyanAccent, fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+            }
+        }
+
+        // 3.2 She Was Pretty Episodes Rail
+        if (sheWasPrettyShow != null && sheWasPrettyShow!!.items.isNotEmpty()) {
+            item {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Favorite, contentDescription = null, tint = Color(0xFFFF4081), modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "শি ওয়াজ প্রিটি - পর্বসমূহ (She Was Pretty)",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "${sheWasPrettyShow!!.items.size} Episodes",
+                            color = Color(0xFFFF4081),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(sheWasPrettyShow!!.items.take(20)) { ep ->
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                                modifier = Modifier
+                                    .width(160.dp)
+                                    .clickable { onSelectMovie(-90001L) }
+                            ) {
+                                Column {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(90.dp)
+                                            .background(Color.Black)
+                                    ) {
+                                        if (!ep.thumbnail.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = ep.thumbnail,
+                                                contentDescription = ep.title,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Surface(
+                                            color = Color.Black.copy(alpha = 0.6f),
+                                            shape = CircleShape,
+                                            modifier = Modifier.align(Alignment.Center)
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.padding(6.dp).size(20.dp))
+                                        }
+                                    }
+                                    Column(modifier = Modifier.padding(6.dp)) {
+                                        Text(
+                                            text = ep.title,
+                                            color = TextPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text("এইচডি পর্ব", color = Color(0xFFFF4081), fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+            }
+        }
+
+        // 3.3 Kimi Wa Pet Episodes Rail
+        if (kimiWaPetShow != null && kimiWaPetShow!!.items.isNotEmpty()) {
+            item {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = null, tint = GoldRating, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "আদরের বয়ফ্রেন্ড - পর্বসমূহ (Kimi Wa Pet)",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "${kimiWaPetShow!!.items.size} Episodes",
+                            color = GoldRating,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(kimiWaPetShow!!.items.take(20)) { ep ->
+                            Card(
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                                modifier = Modifier
+                                    .width(160.dp)
+                                    .clickable { onSelectMovie(-90001L) }
+                            ) {
+                                Column {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(90.dp)
+                                            .background(Color.Black)
+                                    ) {
+                                        if (!ep.thumbnail.isNullOrEmpty()) {
+                                            AsyncImage(
+                                                model = ep.thumbnail,
+                                                contentDescription = ep.title,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                        Surface(
+                                            color = Color.Black.copy(alpha = 0.6f),
+                                            shape = CircleShape,
+                                            modifier = Modifier.align(Alignment.Center)
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.padding(6.dp).size(20.dp))
+                                        }
+                                    }
+                                    Column(modifier = Modifier.padding(6.dp)) {
+                                        Text(
+                                            text = ep.title,
+                                            color = TextPrimary,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text("এইচডি পর্ব", color = GoldRating, fontSize = 9.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+            }
+        }
+
+        // 4. Bongo BD Scrape Full Video Catalog
+        if (bongoVideos.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "বঙ্গ অরিজিনাল ক্যাটালগ (Bongo BD Originals)",
+                        color = TextPrimary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     TextButton(onClick = onNavigateToMovies) {
                         Text("সব দেখুন", color = BrandRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(6.dp))
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -312,8 +851,76 @@ fun HomeScreen(
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(14.dp))
             }
+        }
+
+        // 5. LIVE SPORTS & CRICKET QUICK BANNER
+        item {
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.4f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp)
+                    .clickable { onNavigateToSports() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        color = Color(0xFF00E676).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.SportsCricket,
+                            contentDescription = null,
+                            tint = Color(0xFF00E676),
+                            modifier = Modifier.padding(10.dp).size(26.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(Color(0xFF00E676), CircleShape)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "LIVE SPORTS",
+                                color = Color(0xFF00E676),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                        Text(
+                            text = "লাইভ ক্রিকেট ও ফুটবল ম্যাচ",
+                            color = TextPrimary,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "T Sports, Star Sports 1 HD ও লাইভ স্কোর দেখুন",
+                            color = TextMuted,
+                            fontSize = 11.sp
+                        )
+                    }
+                    Button(
+                        onClick = onNavigateToSports,
+                        colors = ButtonDefaults.buttonColors(containerColor = AuthBrandPrimary),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("দেখুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(14.dp))
         }
 
         // ----------------------------------------------------

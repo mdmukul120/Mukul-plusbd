@@ -49,6 +49,8 @@ fun MoviesScreen(
     val menusData by mediaRepository.menusData.collectAsState()
     var selectedCategory by remember { mutableStateOf<CtgCategoryItem?>(null) }
     var isBongoSelected by remember { mutableStateOf(false) }
+    var isTapmadSelected by remember { mutableStateOf(false) }
+    var specialSource by remember { mutableStateOf<String?>(null) } // "TURKISH", "KOREAN", "BANGLASUB", "MLSBD", "MLBD"
     var selectedYear by remember { mutableStateOf<Int?>(null) }
     var selectedGenre by remember { mutableStateOf<String?>(null) }
     var selectedSort by remember { mutableStateOf("createdAt") }
@@ -70,7 +72,7 @@ fun MoviesScreen(
         mediaRepository.getMenus()
     }
 
-    LaunchedEffect(selectedCategory, isBongoSelected, selectedYear, selectedGenre, selectedSort, currentPage, debouncedQuery) {
+    LaunchedEffect(selectedCategory, isBongoSelected, isTapmadSelected, specialSource, selectedYear, selectedGenre, selectedSort, currentPage, debouncedQuery) {
         isLoading = true
         if (isBongoSelected) {
             val allBongo = mediaRepository.getBongoVideos()
@@ -84,6 +86,37 @@ fun MoviesScreen(
                 allBongo
             }
             totalPages = 1
+        } else if (isTapmadSelected) {
+            val allTapmad = mediaRepository.getTapmadEntertainment()
+            movies = if (debouncedQuery.isNotBlank()) {
+                allTapmad.filter {
+                    it.title.contains(debouncedQuery, ignoreCase = true) ||
+                    (it.overview?.contains(debouncedQuery, ignoreCase = true) == true)
+                }
+            } else {
+                allTapmad
+            }
+            totalPages = 1
+        } else if (specialSource != null) {
+            val q = when (specialSource) {
+                "TURKISH" -> debouncedQuery.ifBlank { "Turkish" }
+                "KOREAN" -> debouncedQuery.ifBlank { "Korean" }
+                "BANGLASUB" -> debouncedQuery.ifBlank { "Bangla Sub" }
+                "MLSBD" -> debouncedQuery.ifBlank { "MLSBD" }
+                "MLBD" -> debouncedQuery.ifBlank { "MLBD" }
+                else -> debouncedQuery
+            }
+            val res = ApiClient.fetchCtgMovies(
+                library = if (specialSource == "KOREAN") 10 else null,
+                page = currentPage,
+                sort = selectedSort,
+                sortOrder = "DESC",
+                search = q.ifBlank { null },
+                year = selectedYear,
+                genre = if (specialSource == "TURKISH") "Turkish" else selectedGenre
+            )
+            movies = res.data
+            totalPages = res.pages.coerceAtLeast(1)
         } else {
             val targetLibrary = if (debouncedQuery.isNotBlank() && selectedCategory == null) null else (selectedCategory?.id ?: 1)
             var res = ApiClient.fetchCtgMovies(
@@ -322,10 +355,90 @@ fun MoviesScreen(
                 item {
                     FilterChipItem(
                         label = "🌏 তামিল ও তেলেগু",
-                        selected = !isBongoSelected && selectedCategory?.id == 11,
+                        selected = !isBongoSelected && !isTapmadSelected && specialSource == null && selectedCategory?.id == 11,
                         onClick = {
                             isBongoSelected = false
+                            isTapmadSelected = false
+                            specialSource = null
                             selectedCategory = CtgCategoryItem(11, "🌏 Tamil & Telugu", "LANGUAGE")
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "🇹🇷 তুর্কি ড্রামা (Turkish)",
+                        selected = specialSource == "TURKISH",
+                        onClick = {
+                            isBongoSelected = false
+                            isTapmadSelected = false
+                            selectedCategory = null
+                            specialSource = "TURKISH"
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "🇰🇷 কে-ড্রামা (K-Drama)",
+                        selected = specialSource == "KOREAN",
+                        onClick = {
+                            isBongoSelected = false
+                            isTapmadSelected = false
+                            selectedCategory = null
+                            specialSource = "KOREAN"
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "📺 ট্যাপম্যাড হাব (Tapmad)",
+                        selected = isTapmadSelected,
+                        onClick = {
+                            isBongoSelected = false
+                            specialSource = null
+                            selectedCategory = null
+                            isTapmadSelected = true
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "🔤 বাংলা সাবটাইটেল (Bangla Sub)",
+                        selected = specialSource == "BANGLASUB",
+                        onClick = {
+                            isBongoSelected = false
+                            isTapmadSelected = false
+                            selectedCategory = null
+                            specialSource = "BANGLASUB"
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "⚡ MLSBD কালেকশন",
+                        selected = specialSource == "MLSBD",
+                        onClick = {
+                            isBongoSelected = false
+                            isTapmadSelected = false
+                            selectedCategory = null
+                            specialSource = "MLSBD"
+                            currentPage = 1
+                        }
+                    )
+                }
+                item {
+                    FilterChipItem(
+                        label = "💎 MLBD ড্রাইভ",
+                        selected = specialSource == "MLBD",
+                        onClick = {
+                            isBongoSelected = false
+                            isTapmadSelected = false
+                            selectedCategory = null
+                            specialSource = "MLBD"
                             currentPage = 1
                         }
                     )

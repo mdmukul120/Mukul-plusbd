@@ -39,6 +39,7 @@ import com.example.data.download.InAppDownloader
 import com.example.data.model.*
 import com.example.data.repository.MediaRepository
 import com.example.data.util.DownloadUtils
+import com.example.ui.components.MovieDownloadModal
 import com.example.ui.components.VideoPlayerView
 import com.example.ui.theme.*
 import kotlinx.coroutines.launch
@@ -66,6 +67,8 @@ fun MovieDetailScreen(
     var isLoading by remember { mutableStateOf(true) }
     var isPlayingInApp by remember { mutableStateOf(false) }
     var isFullScreen by remember { mutableStateOf(false) }
+    var showDownloadModal by remember { mutableStateOf(false) }
+    var bongoShow by remember { mutableStateOf<BongoShow?>(null) }
 
     // Control bar dropdown states (Mukul OTT style)
     var showResolutionDropdown by remember { mutableStateOf(false) }
@@ -114,6 +117,28 @@ fun MovieDetailScreen(
                         activeStreamUrl = resolved
                     } else {
                         activeStreamUrl = streamUrl
+                    }
+                }
+
+                // Auto-detect Bongo series episodes
+                val titleLower = movie?.title?.lowercase() ?: ""
+                val bongoSysId = when {
+                    movie?.file_path?.length == 11 -> movie?.file_path
+                    titleLower.contains("bachelor point") -> "zvcly4FdFv0"
+                    titleLower.contains("salahuddin") || titleLower.contains("ayyubi") -> "dSH3So8VrJG"
+                    titleLower.contains("user not found") -> "3ScklzcngJy"
+                    titleLower.contains("she was pretty") || titleLower.contains("shundoritoma") -> "vdc0v0XXsTi"
+                    titleLower.contains("kimi wa pet") || titleLower.contains("adorer boyfriend") -> "3WTufg8lxDK"
+                    else -> null
+                }
+                if (!bongoSysId.isNullOrEmpty()) {
+                    val show = ApiClient.fetchBongoShowEpisodes(bongoSysId)
+                    if (show != null) {
+                        bongoShow = show
+                        if (activeStreamUrl == null && show.items.isNotEmpty()) {
+                            activeStreamUrl = ApiClient.resolveBongoStreamUrl(show.items.first().id)
+                            activeEpisodeLabel = show.items.first().title
+                        }
                     }
                 }
 
@@ -684,6 +709,12 @@ fun MovieDetailScreen(
                     ) {
                         Button(
                             onClick = {
+                                if (activeStreamUrl.isNullOrEmpty()) {
+                                    val fallback = ctgMovie?.getFullStreamUrl() ?: extractorInfo?.streamLinks?.firstOrNull()?.link ?: bongoShow?.items?.firstOrNull()?.let { ApiClient.resolveBongoStreamUrl(it.id) }
+                                    if (!fallback.isNullOrEmpty()) {
+                                        activeStreamUrl = ApiClient.resolveBongoStreamUrl(fallback)
+                                    }
+                                }
                                 isPlayingInApp = true
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AuthBrandPrimary),
@@ -700,12 +731,7 @@ fun MovieDetailScreen(
 
                         OutlinedButton(
                             onClick = {
-                                val downloadUrl = activeStreamUrl ?: ctgMovie?.getFullStreamUrl()
-                                if (!downloadUrl.isNullOrEmpty()) {
-                                    startDownload(context, downloadUrl, displayTitle)
-                                } else {
-                                    Toast.makeText(context, "ডাউনলোড লিংক নিচে সিলেক্ট করুন", Toast.LENGTH_SHORT).show()
-                                }
+                                showDownloadModal = true
                             },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                             border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
@@ -714,9 +740,115 @@ fun MovieDetailScreen(
                                 .weight(1f)
                                 .height(46.dp)
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp), tint = CyanAccent)
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("ডাউনলোড (Save)", fontSize = 12.sp)
+                        }
+                    }
+
+                    // Trailer and Party Button Row
+                    if (trailers.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = {
+                                    try {
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(trailers.first().youtubeUrl))
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {}
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, GoldRating.copy(alpha = 0.6f)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                            ) {
+                                Icon(Icons.Default.Movie, contentDescription = null, modifier = Modifier.size(16.dp), tint = GoldRating)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("অফিসিয়াল ট্রেলার", fontSize = 12.sp, color = GoldRating, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = {
+                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, "Watch Party: $displayTitle")
+                                        putExtra(Intent.EXTRA_TEXT, "Watch $displayTitle with me on Mukul Plus! Code: MP-${(1000..9999).random()}")
+                                    }
+                                    context.startActivity(Intent.createChooser(shareIntent, "Share Watch Party"))
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                            ) {
+                                Icon(Icons.Default.Group, contentDescription = null, modifier = Modifier.size(16.dp), tint = CyanAccent)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("ওয়াচ পার্টি (Party)", fontSize = 12.sp, color = TextPrimary)
+                            }
+                        }
+                    }
+
+                    // Server Selection Rail (TmdbServerPick)
+                    val availableServers = remember(ctgMovie, extractorInfo, bongoShow, activeStreamUrl) {
+                        val list = mutableListOf<Pair<String, String>>()
+                        val ctgUrl = ctgMovie?.getFullStreamUrl()
+                        if (!ctgUrl.isNullOrEmpty()) {
+                            list.add("সার্ভার ১ (SuperFast VIP)" to ctgUrl)
+                        }
+                        extractorInfo?.streamLinks?.forEachIndexed { idx, dl ->
+                            list.add("সার্ভার ${list.size + 1} (${dl.quality ?: "Cloud"})" to dl.link)
+                        }
+                        bongoShow?.items?.firstOrNull()?.let {
+                            list.add("সার্ভার (Bongo CDN)" to it.hlsUrl)
+                        }
+                        if (list.isEmpty() && !activeStreamUrl.isNullOrEmpty()) {
+                            list.add("সার্ভার ১ (HD Stream)" to activeStreamUrl!!)
+                        }
+                        list
+                    }
+
+                    if (availableServers.size > 1) {
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "সার্ভার নির্বাচন করুন (Server Pick)",
+                            color = TextPrimary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(availableServers) { (serverName, sUrl) ->
+                                val isSelected = activeStreamUrl == sUrl || (activeStreamUrl?.contains(sUrl) == true)
+                                FilterChip(
+                                    selected = isSelected,
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            activeStreamUrl = ApiClient.resolveBongoStreamUrl(sUrl)
+                                            isPlayingInApp = true
+                                        }
+                                    },
+                                    label = { Text(serverName, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = AuthBrandPrimary,
+                                        selectedLabelColor = Color.White,
+                                        containerColor = CinemaSurface,
+                                        labelColor = TextSecondary
+                                    ),
+                                    border = FilterChipDefaults.filterChipBorder(
+                                        borderColor = CinemaBorder,
+                                        selectedBorderColor = AuthBrandPrimary,
+                                        enabled = true,
+                                        selected = isSelected
+                                    )
+                                )
+                            }
                         }
                     }
 
@@ -750,134 +882,153 @@ fun MovieDetailScreen(
                 }
             }
 
-            // 3. Provider Download & Streaming Links Section
-            item {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // 3. Bongo Series Episodes Selector (if series)
+            if (bongoShow != null && bongoShow!!.items.isNotEmpty()) {
+                item {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
                     ) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, tint = CyanAccent)
-                        Text(
-                            text = "প্রোভাইডার ডাউনলোড ও স্ট্রিম লিংক",
-                            color = TextPrimary,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Text(
-                        text = "নিচের যেকোনো রেজোলিউশনে ক্লিক করে সরাসরি চালান অথবা ডাউনলোড করুন",
-                        color = TextMuted,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)
-                    )
-
-                    val allDownloads = extractorInfo?.downloadLinks ?: emptyList()
-                    val ctgStream = ctgMovie?.getFullStreamUrl()
-
-                    if (allDownloads.isEmpty() && ctgStream == null) {
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Icon(Icons.Default.Info, contentDescription = null, tint = GoldRating)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.VideoLibrary, contentDescription = null, tint = CyanAccent)
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "ডাউনলোড সার্ভার থেকে লিংক ফেচ করা হচ্ছে...",
-                                    color = TextSecondary,
-                                    fontSize = 12.sp
+                                    text = "সকল পর্ব (${bongoShow!!.items.size} Episodes)",
+                                    color = TextPrimary,
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
-                        }
-                    } else {
-                        // If CtgHall URL exists
-                        if (ctgStream != null) {
-                            DownloadLinkCard(
-                                title = "${ctgMovie?.title ?: "Movie"} (Original HD Web-DL)",
-                                quality = "1080p Full HD",
-                                link = ctgStream,
-                                onPlay = {
-                                    activeStreamUrl = ctgStream
-                                    isPlayingInApp = true
-                                },
-                                onDownload = {
-                                    startDownload(context, ctgStream, "${ctgMovie?.title}.mp4")
-                                }
+                            Text(
+                                text = "সিজন ${bongoShow!!.season}",
+                                color = BrandRed,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
                         }
-
-                        // Extractor direct & episode links
-                        allDownloads.forEach { dl ->
-                            DownloadLinkCard(
-                                title = dl.title,
-                                quality = dl.quality ?: "HD",
-                                link = dl.link,
-                                onPlay = {
-                                    if (dl.link.contains("archives") || dl.link.contains("episodes")) {
-                                        coroutineScope.launch {
-                                            isResolvingDownload = true
-                                            resolvingMessage = "পর্বের তালিকা সংগ্রহ করা হচ্ছে..."
-                                            episodesList = ApiClient.fetchExtractorEpisodes(dl.link)
-                                            isResolvingDownload = false
-                                            showEpisodesDialog = true
-                                        }
-                                    } else if (dl.link.contains("sid=") || dl.link.contains("unblockedgames") || dl.link.contains("cloud.")) {
-                                        coroutineScope.launch {
-                                            isResolvingDownload = true
-                                            resolvingMessage = "হাই-স্পিড সার্ভার কানেক্ট করা হচ্ছে..."
-                                            val servers = ApiClient.fetchExtractorStream(dl.link)
-                                            isResolvingDownload = false
-                                            if (servers.isNotEmpty()) {
-                                                resolvedServers = servers
-                                                showServersDialog = true
-                                            } else {
-                                                activeStreamUrl = dl.link
+                        Spacer(modifier = Modifier.height(10.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            items(bongoShow!!.items) { ep ->
+                                val isCurrentEp = activeEpisodeLabel == ep.title || (activeStreamUrl != null && activeStreamUrl!!.contains(ep.id))
+                                Card(
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                                    border = if (isCurrentEp) androidx.compose.foundation.BorderStroke(1.5.dp, BrandRed) else androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                                    modifier = Modifier
+                                        .width(160.dp)
+                                        .clickable {
+                                            coroutineScope.launch {
+                                                activeStreamUrl = ApiClient.resolveBongoStreamUrl(ep.id)
+                                                activeEpisodeLabel = ep.title
                                                 isPlayingInApp = true
                                             }
                                         }
-                                    } else {
-                                        activeStreamUrl = dl.link
-                                        isPlayingInApp = true
-                                    }
-                                },
-                                onDownload = {
-                                    if (dl.link.contains("archives") || dl.link.contains("episodes")) {
-                                        coroutineScope.launch {
-                                            isResolvingDownload = true
-                                            resolvingMessage = "পর্বের তালিকা সংগ্রহ করা হচ্ছে..."
-                                            episodesList = ApiClient.fetchExtractorEpisodes(dl.link)
-                                            isResolvingDownload = false
-                                            showEpisodesDialog = true
-                                        }
-                                    } else if (dl.link.contains("sid=") || dl.link.contains("unblockedgames") || dl.link.contains("cloud.")) {
-                                        coroutineScope.launch {
-                                            isResolvingDownload = true
-                                            resolvingMessage = "ডাউনলোড সার্ভার তৈরি করা হচ্ছে..."
-                                            val servers = ApiClient.fetchExtractorStream(dl.link)
-                                            isResolvingDownload = false
-                                            if (servers.isNotEmpty()) {
-                                                resolvedServers = servers
-                                                targetDownloadFileName = "${displayTitle}_${dl.quality}.mkv"
-                                                showServersDialog = true
-                                            } else {
-                                                startDownload(context, dl.link, "${displayTitle}_${dl.quality}.mp4")
+                                ) {
+                                    Column {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(90.dp)
+                                                .background(Color.Black)
+                                        ) {
+                                            if (!ep.thumbnail.isNullOrEmpty()) {
+                                                AsyncImage(
+                                                    model = ep.thumbnail,
+                                                    contentDescription = ep.title,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            }
+                                            Surface(
+                                                color = Color.Black.copy(alpha = 0.6f),
+                                                shape = CircleShape,
+                                                modifier = Modifier.align(Alignment.Center)
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.PlayArrow,
+                                                    contentDescription = "Play",
+                                                    tint = Color.White,
+                                                    modifier = Modifier.padding(6.dp).size(20.dp)
+                                                )
                                             }
                                         }
-                                    } else {
-                                        startDownload(context, dl.link, "${displayTitle}_${dl.quality}.mp4")
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            Text(
+                                                text = ep.title,
+                                                color = if (isCurrentEp) BrandRed else TextPrimary,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            ep.duration?.let { d ->
+                                                Text(d, color = TextMuted, fontSize = 9.sp)
+                                            }
+                                        }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. Dedicated Download Center Section (Separate Page Card)
+            item {
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clickable { showDownloadModal = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            color = AuthBrandPrimary.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.CloudDownload,
+                                contentDescription = null,
+                                tint = CyanAccent,
+                                modifier = Modifier.padding(10.dp).size(26.dp)
                             )
-                            Spacer(modifier = Modifier.height(8.dp))
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "ডাউনলোড কেন্দ্র (Download Center)",
+                                color = TextPrimary,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "১০৮০p, ৭২০p, ৪৮০p ও ফাস্ট ক্লাউড ফাইল ডাউনলোড করতে ক্লিক করুন",
+                                color = TextMuted,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Button(
+                            onClick = { showDownloadModal = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = AuthBrandPrimary),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(34.dp)
+                        ) {
+                            Text("খুলুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1166,6 +1317,20 @@ fun MovieDetailScreen(
                 TextButton(onClick = { showServersDialog = false }) {
                     Text("বন্ধ করুন", color = TextSecondary)
                 }
+            }
+        )
+    }
+
+    if (showDownloadModal) {
+        MovieDownloadModal(
+            title = displayTitle,
+            poster = displayPoster,
+            downloadLinks = extractorInfo?.downloadLinks ?: emptyList(),
+            fallbackStreamUrl = activeStreamUrl ?: ctgMovie?.getFullStreamUrl(),
+            onDismiss = { showDownloadModal = false },
+            onDownloadUrl = { url, fileName ->
+                startDownload(context, url, fileName)
+                showDownloadModal = false
             }
         )
     }

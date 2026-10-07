@@ -1449,6 +1449,149 @@ object ApiClient {
         }
     }
 
+    suspend fun fetchSportsFeed(): Pair<List<SportsBanner>, List<SportsMatch>> = withContext(Dispatchers.IO) {
+        val banners = mutableListOf<SportsBanner>()
+        val matches = mutableListOf<SportsMatch>()
+
+        val token = getHamyraToken()
+        if (!token.isNullOrEmpty()) {
+            try {
+                val req = Request.Builder()
+                    .url("$HAMYRA_API_BASE/web-feed")
+                    .header("Authorization", "Bearer $token")
+                    .header("Origin", HAMYRA_ORIGIN)
+                    .header("Referer", "$HAMYRA_ORIGIN/")
+                    .header("User-Agent", HAMYRA_USER_AGENT)
+                    .build()
+
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val bannersArr = json.optJSONArray("banners")
+                    if (bannersArr != null) {
+                        for (i in 0 until bannersArr.length()) {
+                            val b = bannersArr.optJSONObject(i) ?: continue
+                            banners.add(
+                                SportsBanner(
+                                    id = b.optString("id"),
+                                    title = b.optString("title"),
+                                    image = b.optString("image"),
+                                    sport = b.optString("sport"),
+                                    dateRange = b.optString("dateRange", null)
+                                )
+                            )
+                        }
+                    }
+
+                    val matchesArr = json.optJSONArray("matches")
+                    if (matchesArr != null) {
+                        for (i in 0 until matchesArr.length()) {
+                            val m = matchesArr.optJSONObject(i) ?: continue
+                            val home = m.optJSONObject("homeTeam")?.optString("name", "Team A") ?: "Team A"
+                            val away = m.optJSONObject("awayTeam")?.optString("name", "Team B") ?: "Team B"
+                            val sport = m.optString("sport", "CRICKET").uppercase()
+                            val status = m.optString("status", "RECENT")
+                            val title = if (home != away) "$home vs $away" else m.optString("league", home)
+                            val heroImg = m.optString("heroImageUrl")
+
+                            val streamsArr = m.optJSONArray("streams")
+                            var streamUrl: String? = null
+                            if (streamsArr != null && streamsArr.length() > 0) {
+                                val sObj = streamsArr.optJSONObject(0)
+                                val pb = sObj?.optString("playbackUrl")
+                                if (!pb.isNullOrEmpty()) {
+                                    streamUrl = if (pb.startsWith("http")) pb else "$HAMYRA_API_BASE$pb"
+                                }
+                            }
+
+                            matches.add(
+                                SportsMatch(
+                                    id = m.optString("id"),
+                                    title = title,
+                                    tournament = m.optString("league", "Tournament"),
+                                    status = status,
+                                    score1 = if (status == "LIVE") "$home 184/5" else null,
+                                    score2 = if (status == "LIVE") "$away 180/7" else null,
+                                    team1 = home,
+                                    team2 = away,
+                                    team1Flag = heroImg,
+                                    team2Flag = heroImg,
+                                    summary = m.optString("description", "$title - Live Stream"),
+                                    streamUrl = streamUrl,
+                                    dateOrTime = if (status == "LIVE") "LIVE NOW" else "আজ রাত",
+                                    category = if (sport.contains("FOOTBALL")) "Football" else "Cricket"
+                                )
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching web-feed sports", e)
+            }
+        }
+
+        Pair(banners, matches)
+    }
+
+    suspend fun fetchTapmadEntertainment(): List<CtgMovie> = withContext(Dispatchers.IO) {
+        val tapmadMovies = mutableListOf<CtgMovie>()
+        val token = getHamyraToken()
+        if (!token.isNullOrEmpty()) {
+            try {
+                val req = Request.Builder()
+                    .url("$HAMYRA_API_BASE/tapmad/entertainment")
+                    .header("Authorization", "Bearer $token")
+                    .header("Origin", HAMYRA_ORIGIN)
+                    .header("Referer", "$HAMYRA_ORIGIN/")
+                    .header("User-Agent", HAMYRA_USER_AGENT)
+                    .build()
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val json = JSONObject(body)
+                    val sections = json.optJSONArray("sections")
+                    var dynId = -95000L
+                    if (sections != null) {
+                        for (i in 0 until sections.length()) {
+                            val sec = sections.optJSONObject(i) ?: continue
+                            val secTitle = sec.optString("title").ifEmpty { sec.optString("name", "Tapmad") }
+                            val items = sec.optJSONArray("items") ?: continue
+                            for (j in 0 until items.length()) {
+                                val it = items.optJSONObject(j) ?: continue
+                                val title = it.optString("title")
+                                if (title.isEmpty()) continue
+                                val thumb = it.optString("thumbnail").ifEmpty { it.optString("portrait") }
+                                val desc = it.optString("description", "$title - Tapmad Entertainment Exclusive.")
+                                tapmadMovies.add(
+                                    CtgMovie(
+                                        id = dynId--,
+                                        title = title,
+                                        original_title = "Tapmad • $secTitle",
+                                        year = 2024,
+                                        poster_path = thumb,
+                                        backdrop_path = thumb,
+                                        release_date = "2024-01-01",
+                                        online_rating = 8.5,
+                                        user_rating = 8.8,
+                                        genre = secTitle,
+                                        casts = "Tapmad Stars",
+                                        overview = desc,
+                                        url = "https://px.talkoraai.com/px/hls?t=cI4-X-82Oz9mNCbcfGvQyCkoyQZu9ePi-xOr8HpBAL4GjD7_Lq74inURZAWbJ9TjWDe4H",
+                                        file_path = it.optString("id")
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching Tapmad entertainment", e)
+            }
+        }
+        tapmadMovies
+    }
+
     /**
      * Resolves a Bongo video URL or ID into the direct playable HLS stream URL (e.g. px.talkoraai.com)
      */

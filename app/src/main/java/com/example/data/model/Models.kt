@@ -162,3 +162,38 @@ data class UserProfile(
     val isGuest: Boolean = false,
     val isEmailVerified: Boolean = false
 )
+
+data class SportsMatch(
+    val id: String,
+    val title: String,
+    val tournament: String,
+    val status: String, // "LIVE", "UPCOMING", "FINISHED"
+    val score1: String? = null,
+    val score2: String? = null,
+    val team1: String,
+    val team2: String,
+    val team1Flag: String? = null,
+    val team2Flag: String? = null,
+    val summary: String? = null,
+    val streamUrl: String? = null,
+    val dateOrTime: String? = null,
+    val category: String = "Cricket"
+)
+
+data class SportsBanner(
+    val id: String,
+    val title: String,
+    val image: String,
+    val sport: String,
+    val dateRange: String? = null
+)
+
+data class SportsHighlight(
+    val id: String,
+    val title: String,
+    val duration: String,
+    val thumbnail: String,
+    val videoUrl: String,
+    val views: String? = null,
+    val date: String? = null
+)

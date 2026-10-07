@@ -144,11 +144,12 @@ fun VideoPlayerView(
             "Accept" to "*/*",
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
         )
-        if (host.contains("hamyra")) {
+        if (host.contains("ctghall")) {
+            dynamicHeaders["Referer"] = "https://www.ctghall.com/"
+        } else {
+            // Required for px.talkoraai.com, bongo, hamyra and associated HLS streaming CDNs to prevent 403 Forbidden
             dynamicHeaders["Origin"] = "https://www.hamyra.xyz"
             dynamicHeaders["Referer"] = "https://www.hamyra.xyz/"
-        } else if (host.contains("ctghall")) {
-            dynamicHeaders["Referer"] = "https://www.ctghall.com/"
         }
 
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()

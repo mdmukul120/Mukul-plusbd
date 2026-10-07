@@ -63,6 +63,7 @@ import kotlinx.coroutines.launch
 enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
     MOVIES("মুভি", Icons.Default.Movie),
+    SPORTS("স্পোর্টস", Icons.Default.SportsCricket),
     LIVE_TV("টিভি", Icons.Default.Tv),
     BANGLA_OTT("বাংলা ওটিটি", Icons.Default.Subscriptions),
     MUSIC("মিউজিক", Icons.Default.MusicNote),
@@ -333,6 +334,17 @@ fun MukulPlusApp() {
                     )
 
                     NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.SportsCricket, contentDescription = null, tint = if (currentTab == ScreenTab.SPORTS) Color(0xFF00E676) else TextSecondary) },
+                        label = { Text("লাইভ স্পোর্টস ও ক্রিকেট") },
+                        selected = currentTab == ScreenTab.SPORTS,
+                        onClick = {
+                            currentTab = ScreenTab.SPORTS
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Tv, contentDescription = null, tint = if (currentTab == ScreenTab.LIVE_TV) BrandRed else TextSecondary) },
                         label = { Text("লাইভ টিভি") },
                         selected = currentTab == ScreenTab.LIVE_TV,
@@ -532,7 +544,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER && currentTab != ScreenTab.BANGLA_OTT) {
+                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER && currentTab != ScreenTab.BANGLA_OTT && currentTab != ScreenTab.SPORTS) {
                     Surface(
                         color = CinemaSurface,
                         tonalElevation = 3.dp,
@@ -693,7 +705,8 @@ fun MukulPlusApp() {
                             onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR },
                             onNavigateToMusic = { currentTab = ScreenTab.MUSIC },
                             onNavigateToWeather = { currentTab = ScreenTab.WEATHER },
-                            onNavigateToBanglaOtt = { currentTab = ScreenTab.BANGLA_OTT }
+                            onNavigateToBanglaOtt = { currentTab = ScreenTab.BANGLA_OTT },
+                            onNavigateToSports = { currentTab = ScreenTab.SPORTS }
                         )
                     }
                     ScreenTab.BANGLA_OTT -> {
@@ -707,6 +720,14 @@ fun MukulPlusApp() {
                         MoviesScreen(
                             mediaRepository = mediaRepository,
                             onSelectMovie = { id: Long -> selectedMovieId = id }
+                        )
+                    }
+                    ScreenTab.SPORTS -> {
+                        SportsScreen(
+                            onSelectChannel = { channel ->
+                                selectedTvChannel = channel
+                                currentTab = ScreenTab.LIVE_TV
+                            }
                         )
                     }
                     ScreenTab.LIVE_TV -> {

@@ -107,9 +107,21 @@ class MediaRepository(context: Context) {
         return ApiClient.fetchBongoShowEpisodes(systemId)
     }
 
+    private val _tapmadVideos = MutableStateFlow<List<CtgMovie>>(emptyList())
+    val tapmadVideos: StateFlow<List<CtgMovie>> = _tapmadVideos.asStateFlow()
+
+    suspend fun getTapmadEntertainment(forceRefresh: Boolean = false): List<CtgMovie> {
+        if (!forceRefresh && _tapmadVideos.value.isNotEmpty()) {
+            return _tapmadVideos.value
+        }
+        val list = ApiClient.fetchTapmadEntertainment()
+        _tapmadVideos.value = list
+        return list
+    }
+
     suspend fun getMovieById(id: Long): CtgMovie? {
         if (id < 0) {
-            return ApiClient.getBongoMovieById(id) ?: _bongoVideos.value.find { it.id == id }
+            return ApiClient.getBongoMovieById(id) ?: _bongoVideos.value.find { it.id == id } ?: _tapmadVideos.value.find { it.id == id }
         }
         return ApiClient.fetchCtgMovieDetail(id)
     }
