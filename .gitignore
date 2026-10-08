@@ -1,18 +1,50 @@
-*.iml
-.gradle
-.kotlin
-/local.properties
-/.idea/caches
-/.idea/libraries
-/.idea/modules.xml
-/.idea/workspace.xml
-/.idea/navEditor.xml
-/.idea/assetWizardSettings.xml
-.DS_Store
-/build
-/captures
+# Built application files
+*.apk
+*.aar
+*.aab
+*.ap_
+
+# Files for the ART/Dalvik VM
+*.dex
+
+# Java class files
+*.class
+
+# Generated and build directories
+build/
+*/build/
+app/build/
+.build-outputs/
+release-output/
+bin/
+gen/
+out/
+captures/
 .externalNativeBuild
-.cxx
+.cxx/
+*/.cxx/
+
+# Gradle files and caches
+.gradle/
+**/.gradle/
+buildOutput/
+
+# Local configuration file (sdk path, secrets, etc)
 local.properties
+/local.properties
 .env
+.env.local
+
+# IntelliJ / Android Studio
+*.iml
+.idea/
+/.idea/
+.kotlin/
+**/.kotlin/
+
+# Keystore (never commit local keystore)
 debug.keystore
+
+# OS generated files
+.DS_Store
+Thumbs.db
