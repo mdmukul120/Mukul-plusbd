@@ -25,6 +25,12 @@ object ApiClient {
     @Volatile
     private var hamyraTokenExp: Long = 0L
 
+    fun getCachedHamyraToken(): String? = hamyraToken
+
+    suspend fun ensureHamyraToken(): String? = withContext(Dispatchers.IO) {
+        getHamyraToken()
+    }
+
     @Synchronized
     fun getHamyraToken(): String? {
         val now = System.currentTimeMillis() / 1000
@@ -995,13 +1001,6 @@ object ApiClient {
         val token = getHamyraToken()
         if (!token.isNullOrEmpty()) {
             try {
-                val noRedirectClient = client.newBuilder()
-                    .followRedirects(false)
-                    .followSslRedirects(false)
-                    .connectTimeout(8, TimeUnit.SECONDS)
-                    .readTimeout(8, TimeUnit.SECONDS)
-                    .build()
-
                 val req = Request.Builder()
                     .url("$HAMYRA_API_BASE/bongo/hls?id=$bongoId")
                     .header("Authorization", "Bearer $token")
@@ -1010,11 +1009,21 @@ object ApiClient {
                     .header("User-Agent", HAMYRA_USER_AGENT)
                     .build()
 
-                val res = noRedirectClient.newCall(req).execute()
+                val res = client.newCall(req).execute()
                 val loc = res.header("Location")
                 if (!loc.isNullOrEmpty()) {
-                    Log.d(TAG, "Resolved Bongo HLS direct stream: $loc")
+                    Log.d(TAG, "Resolved Bongo HLS direct stream via Location: $loc")
                     return loc
+                }
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty() && body.contains("#EXTM3U")) {
+                    val subUrls = body.lines().map { it.trim() }.filter { it.startsWith("http") }
+                    if (subUrls.isNotEmpty()) {
+                        // Return the highest quality (1080p Full HD) stream
+                        val stream = subUrls.last()
+                        Log.d(TAG, "Resolved Bongo HLS sub-playlist direct stream: $stream")
+                        return stream
+                    }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error resolving Bongo stream url for $bongoId", e)
@@ -1022,6 +1031,111 @@ object ApiClient {
         }
 
         return if (urlOrId.startsWith("http")) urlOrId else "$HAMYRA_API_BASE/bongo/hls?id=$bongoId"
+    }
+
+    suspend fun fetchBongoShowEpisodes(systemId: String): BongoShow? = withContext(Dispatchers.IO) {
+        val token = getHamyraToken()
+        if (token.isNullOrEmpty()) return@withContext null
+        try {
+            val req = Request.Builder()
+                .url("$HAMYRA_API_BASE/bongo/episodes?id=$systemId")
+                .header("Authorization", "Bearer $token")
+                .header("Origin", HAMYRA_ORIGIN)
+                .header("Referer", "$HAMYRA_ORIGIN/")
+                .header("User-Agent", HAMYRA_USER_AGENT)
+                .build()
+            val res = client.newCall(req).execute()
+            val body = res.body?.string()
+            if (!body.isNullOrEmpty()) {
+                val json = JSONObject(body)
+                val programTitle = json.optString("programTitle", json.optString("title", "Bongo Show"))
+                val season = json.optInt("season", 1)
+                val maxSeason = json.optInt("maxSeason", 1)
+                val itemsArr = json.optJSONArray("items") ?: json.optJSONArray("episodes")
+                val episodeList = mutableListOf<BongoEpisode>()
+                if (itemsArr != null) {
+                    for (i in 0 until itemsArr.length()) {
+                        val epObj = itemsArr.optJSONObject(i) ?: continue
+                        val epId = epObj.optString("id").ifEmpty { epObj.optString("systemId") }
+                        val epTitle = epObj.optString("title", "Episode ${i + 1}")
+                        val epThumb = epObj.optString("thumbnail").ifEmpty { epObj.optString("portrait") }
+                        val epDur = epObj.optString("duration")
+                        episodeList.add(
+                            BongoEpisode(
+                                id = epId,
+                                systemId = systemId,
+                                title = epTitle,
+                                thumbnail = epThumb,
+                                duration = epDur,
+                                season = season,
+                                episodeNumber = i + 1
+                            )
+                        )
+                    }
+                }
+                return@withContext BongoShow(
+                    systemId = systemId,
+                    programTitle = programTitle,
+                    season = season,
+                    maxSeason = maxSeason,
+                    itemCount = episodeList.size,
+                    items = episodeList
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching Bongo show episodes for $systemId", e)
+        }
+        null
+    }
+
+    suspend fun fetchTapmadEntertainment(): List<CtgMovie> = withContext(Dispatchers.IO) {
+        val token = getHamyraToken()
+        val list = mutableListOf<CtgMovie>()
+        if (!token.isNullOrEmpty()) {
+            try {
+                val req = Request.Builder()
+                    .url("$HAMYRA_API_BASE/tapmad/entertainment")
+                    .header("Authorization", "Bearer $token")
+                    .header("Origin", HAMYRA_ORIGIN)
+                    .header("Referer", "$HAMYRA_ORIGIN/")
+                    .header("User-Agent", HAMYRA_USER_AGENT)
+                    .build()
+                val res = client.newCall(req).execute()
+                val body = res.body?.string()
+                if (!body.isNullOrEmpty()) {
+                    val root = JSONObject(body)
+                    val items = root.optJSONArray("items") ?: root.optJSONArray("data")
+                    var tapmadId = -95000L
+                    if (items != null) {
+                        for (i in 0 until items.length()) {
+                            val itm = items.optJSONObject(i) ?: continue
+                            val id = itm.optString("id")
+                            val title = itm.optString("title")
+                            if (title.isEmpty()) continue
+                            val thumb = itm.optString("thumbnail").ifEmpty { itm.optString("poster") }
+                            val cat = itm.optString("category", "Tapmad")
+                            list.add(
+                                CtgMovie(
+                                    id = tapmadId--,
+                                    title = title,
+                                    original_title = "Tapmad • $cat",
+                                    year = 2024,
+                                    poster_path = thumb,
+                                    backdrop_path = thumb,
+                                    online_rating = 8.7,
+                                    genre = cat,
+                                    url = "$HAMYRA_API_BASE/tapmad/hls?id=$id",
+                                    file_path = id
+                                )
+                            )
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error fetching Tapmad entertainment", e)
+            }
+        }
+        list
     }
 
     suspend fun fetchBongoVideos(forceRefresh: Boolean = false): List<CtgMovie> = withContext(Dispatchers.IO) {
@@ -1046,8 +1160,18 @@ object ApiClient {
 
             val thumbnail = item.optString("thumbnail").ifEmpty { item.optString("landscape") }
             val portrait = item.optString("portrait").ifEmpty { thumbnail }
-            val cat = item.optString("category", "Bangla Drama")
-            val synopsis = item.optString("synopsis", "$title - বংগো বিডি এক্সক্লুসিভ বাংলা নাটক ও ওয়েব সিরিজ।")
+            val rawCat = item.optString("category").ifEmpty { item.optString("contentType", "Drama") }
+            val cat = when {
+                rawCat.contains("Movie", ignoreCase = true) || rawCat.contains("সিনেমা", ignoreCase = true) -> "Bangla Movie"
+                rawCat.contains("Drama", ignoreCase = true) || rawCat.contains("নাটক", ignoreCase = true) -> "Bangla Drama"
+                rawCat.contains("Series", ignoreCase = true) || rawCat.contains("সিরিজ", ignoreCase = true) -> "Web Series"
+                rawCat.contains("Comedy", ignoreCase = true) -> "Comedy"
+                rawCat.contains("Thriller", ignoreCase = true) || rawCat.contains("Crime", ignoreCase = true) -> "Thriller"
+                rawCat.contains("Romance", ignoreCase = true) -> "Romance"
+                rawCat.contains("Action", ignoreCase = true) -> "Action"
+                else -> rawCat
+            }
+            val synopsis = item.optString("synopsis", "$title - বংগো বিডি এক্সক্লুসিভ বাংলা কন্টেন্ট।")
             val yearVal = item.optInt("year", 2024).let { if (it in 1990..2030) it else 2024 }
 
             allBongoVideos.add(
@@ -1331,7 +1455,7 @@ object ApiClient {
                     } else if (trimmed.startsWith("http")) {
                         if (currentTitle.isNotBlank()) {
                             // Deduplicate and filter out dead/blocked domains
-                            if (!trimmed.contains("r2.dev") && !trimmed.contains("circleftp.net")) {
+                            if (!trimmed.contains("r2.dev") && !trimmed.contains("circleftp.net") && !trimmed.contains("pixeldrain") && !trimmed.contains("ftpbd.net")) {
                                 if (curatedBongoList.none { it.title.equals(currentTitle, ignoreCase = true) }) {
                                     val yearMatch = yearRegex.find(currentTitle)
                                     val parsedYear = yearMatch?.groupValues?.get(1)?.toIntOrNull() ?: 2024
@@ -1364,13 +1488,14 @@ object ApiClient {
             Log.e(TAG, "Error fetching dynamic Bongo playlist", e)
         }
 
-        // Combine curated highlights first, followed by all dynamically fetched Bongo videos
+        // Prioritize verified working Bongo BD catalog items (over 725+ movies, series & dramas)
         val finalList = mutableListOf<CtgMovie>()
-        finalList.addAll(curatedBongoList)
+        finalList.addAll(allBongoVideos)
 
-        for (bongoVideo in allBongoVideos) {
-            if (finalList.none { it.file_path == bongoVideo.file_path || it.title.equals(bongoVideo.title, ignoreCase = true) }) {
-                finalList.add(bongoVideo)
+        // Then add curated highlight titles if they aren't duplicates
+        for (curated in curatedBongoList) {
+            if (finalList.none { it.title.equals(curated.title, ignoreCase = true) }) {
+                finalList.add(curated)
             }
         }
 

@@ -54,6 +54,8 @@ import com.example.ui.components.AppUpdateDialog
 import com.example.ui.components.FullMusicPlayerDialog
 import com.example.ui.components.MiniMusicPlayer
 import com.example.ui.components.MukulPlusLogo
+import com.example.ui.components.PluginManagerDialog
+import com.example.data.extension.ExtensionManager
 import com.example.ui.screens.*
 import com.example.ui.theme.*
 import androidx.compose.ui.draw.scale
@@ -62,7 +64,7 @@ import kotlinx.coroutines.launch
 
 enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
-    MOVIES("মুভি", Icons.Default.Movie),
+    MOVIES("মুভি ও ওটিটি", Icons.Default.Movie),
     SPORTS("স্পোর্টস", Icons.Default.SportsCricket),
     LIVE_TV("টিভি", Icons.Default.Tv),
     BANGLA_OTT("বাংলা ওটিটি", Icons.Default.Subscriptions),
@@ -113,10 +115,17 @@ fun MukulPlusApp() {
     val showFullMusicPlayer by MusicPlayerManager.showFullPlayer.collectAsState()
 
     var currentTab by remember { mutableStateOf(ScreenTab.HOME) }
+    var moviesInitialTab by remember { mutableStateOf(MoviesMainTab.MUKUL_OTT) }
+    var moviesInitialSlug by remember { mutableStateOf<String?>(null) }
     var selectedMovieId by remember { mutableStateOf<Long?>(null) }
     var selectedExtractorPost by remember { mutableStateOf<ExtractorPost?>(null) }
     var selectedTvChannel by remember { mutableStateOf<TvChannel?>(null) }
     var showLanguageDialog by remember { mutableStateOf(false) }
+
+    // CloudStream CS3 & Plugins Extension Manager State
+    val extensionManager = remember { ExtensionManager.getInstance(context) }
+    val installedPluginsList by extensionManager.installedPlugins.collectAsState()
+    var showPluginManagerDialog by remember { mutableStateOf(false) }
 
     // In-App GitHub Releases Update State
     var activeUpdateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
@@ -509,6 +518,39 @@ fun MukulPlusApp() {
                     )
 
                     NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Extension, contentDescription = null, tint = BrandRed) },
+                        label = {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("প্লাগইন ও এক্সটেনশন (+)", color = BrandRed, fontWeight = FontWeight.Bold)
+                                if (installedPluginsList.isNotEmpty()) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = BrandRed.copy(alpha = 0.2f)
+                                    ) {
+                                        Text(
+                                            "${installedPluginsList.size}",
+                                            color = BrandRed,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        selected = false,
+                        onClick = {
+                            coroutineScope.launch { drawerState.close() }
+                            showPluginManagerDialog = true
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Person, contentDescription = null, tint = if (currentTab == ScreenTab.PROFILE) BrandRed else TextSecondary) },
                         label = { Text("প্রোফাইল") },
                         selected = currentTab == ScreenTab.PROFILE,
@@ -576,6 +618,28 @@ fun MukulPlusApp() {
                                 MukulPlusLogo(iconSize = 24, textSize = 15)
                             }
 
+                            // Add CS3 Extension / Plugin Plus (+) Button
+                            IconButton(
+                                onClick = { showPluginManagerDialog = true },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Surface(
+                                    color = BrandRed.copy(alpha = 0.15f),
+                                    shape = CircleShape,
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed.copy(alpha = 0.5f)),
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Add,
+                                            contentDescription = "প্লাগইন ও সিএস৩ এক্সটেনশন যোগ করুন",
+                                            tint = BrandRed,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+                            }
+
                             val topBarThemeMode by ThemeManager.themeMode.collectAsState()
                             IconButton(
                                 onClick = { ThemeManager.toggleTheme(context) },
@@ -620,30 +684,31 @@ fun MukulPlusApp() {
                                 ScreenTab.HOME,
                                 ScreenTab.MOVIES,
                                 ScreenTab.LIVE_TV,
-                                ScreenTab.BANGLA_OTT,
-                                ScreenTab.MUSIC,
-                                ScreenTab.YOUTUBE,
-                                ScreenTab.WEATHER,
-                                ScreenTab.MUKUL_OTT,
-                                ScreenTab.EXTRACTOR
+                                ScreenTab.SPORTS,
+                                ScreenTab.MUSIC
                             )
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .navigationBarsPadding()
                                     .height(54.dp)
-                                    .horizontalScroll(rememberScrollState())
-                                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 bottomBarTabs.forEach { tab ->
-                                    val isSelected = currentTab == tab
+                                    val isSelected = currentTab == tab || (tab == ScreenTab.MOVIES && (currentTab == ScreenTab.MUKUL_OTT || currentTab == ScreenTab.BANGLA_OTT))
                                     Column(
                                         modifier = Modifier
-                                            .widthIn(min = 52.dp)
+                                            .weight(1f)
                                             .clip(RoundedCornerShape(10.dp))
-                                            .clickable { currentTab = tab }
-                                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                                            .clickable {
+                                                if (tab == ScreenTab.MOVIES) {
+                                                    moviesInitialTab = MoviesMainTab.MUKUL_OTT
+                                                    moviesInitialSlug = null
+                                                }
+                                                currentTab = tab
+                                            }
+                                            .padding(horizontal = 4.dp, vertical = 4.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
@@ -652,7 +717,7 @@ fun MukulPlusApp() {
                                             shape = RoundedCornerShape(10.dp)
                                         ) {
                                             Box(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
                                                 contentAlignment = Alignment.Center
                                             ) {
                                                 Icon(
@@ -667,7 +732,7 @@ fun MukulPlusApp() {
                                         Text(
                                             text = tab.title,
                                             color = if (isSelected) BrandRedLight else TextMuted,
-                                            fontSize = 9.sp,
+                                            fontSize = 9.5.sp,
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
@@ -700,26 +765,44 @@ fun MukulPlusApp() {
                                 selectedTvChannel = channel
                                 currentTab = ScreenTab.LIVE_TV
                             },
-                            onNavigateToMovies = { currentTab = ScreenTab.MOVIES },
+                            onNavigateToMovies = { targetTab ->
+                                moviesInitialTab = targetTab ?: MoviesMainTab.MUKUL_OTT
+                                moviesInitialSlug = null
+                                currentTab = ScreenTab.MOVIES
+                            },
                             onNavigateToLiveTv = { currentTab = ScreenTab.LIVE_TV },
                             onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR },
                             onNavigateToMusic = { currentTab = ScreenTab.MUSIC },
                             onNavigateToWeather = { currentTab = ScreenTab.WEATHER },
-                            onNavigateToBanglaOtt = { currentTab = ScreenTab.BANGLA_OTT },
-                            onNavigateToSports = { currentTab = ScreenTab.SPORTS }
+                            onNavigateToBanglaOtt = {
+                                moviesInitialTab = MoviesMainTab.BANGLA_OTT
+                                moviesInitialSlug = null
+                                currentTab = ScreenTab.MOVIES
+                            },
+                            onNavigateToSports = { currentTab = ScreenTab.SPORTS },
+                            onSelectMukulMovie = { slug ->
+                                moviesInitialTab = MoviesMainTab.MUKUL_OTT
+                                moviesInitialSlug = slug
+                                currentTab = ScreenTab.MOVIES
+                            },
+                            onOpenPluginManager = { showPluginManagerDialog = true }
                         )
                     }
                     ScreenTab.BANGLA_OTT -> {
-                        BanglaOttScreen(
+                        MoviesScreen(
                             mediaRepository = mediaRepository,
-                            onBack = { currentTab = ScreenTab.HOME },
-                            onNavigateToDownloads = { currentTab = ScreenTab.EXTRACTOR }
+                            onSelectMovie = { id: Long -> selectedMovieId = id },
+                            initialTab = MoviesMainTab.BANGLA_OTT,
+                            onBack = { currentTab = ScreenTab.HOME }
                         )
                     }
                     ScreenTab.MOVIES -> {
                         MoviesScreen(
                             mediaRepository = mediaRepository,
-                            onSelectMovie = { id: Long -> selectedMovieId = id }
+                            onSelectMovie = { id: Long -> selectedMovieId = id },
+                            initialTab = moviesInitialTab,
+                            initialSlug = moviesInitialSlug,
+                            onBack = { currentTab = ScreenTab.HOME }
                         )
                     }
                     ScreenTab.SPORTS -> {
@@ -750,7 +833,12 @@ fun MukulPlusApp() {
                         )
                     }
                     ScreenTab.MUKUL_OTT -> {
-                        MukulOttScreen()
+                        MoviesScreen(
+                            mediaRepository = mediaRepository,
+                            onSelectMovie = { id: Long -> selectedMovieId = id },
+                            initialTab = MoviesMainTab.MUKUL_OTT,
+                            onBack = { currentTab = ScreenTab.HOME }
+                        )
                     }
                     ScreenTab.EXTRACTOR -> {
                         ExtractorScreen()
@@ -811,6 +899,22 @@ fun MukulPlusApp() {
             onDismiss = { showAppUpdateDialog = false }
         )
     }
+
+    // CloudStream CS3 & Plugins Extension Manager Dialog
+    PluginManagerDialog(
+        isOpen = showPluginManagerDialog,
+        onDismiss = { showPluginManagerDialog = false },
+        onPlayStream = { streamUrl, title ->
+            selectedTvChannel = TvChannel(
+                id = "plugin_${System.currentTimeMillis()}",
+                name = title,
+                logo = null,
+                groupTitle = "সিএস৩ এক্সটেনশন",
+                streamUrl = streamUrl
+            )
+            currentTab = ScreenTab.LIVE_TV
+        }
+    )
 }
 
 // -------------------------------------------------------------

@@ -104,11 +104,18 @@ fun VideoPlayerView(
 
     LaunchedEffect(videoUrl) {
         if (videoUrl.contains("bongo/hls") || (videoUrl.contains("hamyra-api") && videoUrl.contains("id="))) {
-            val resolved = withContext(Dispatchers.IO) {
-                ApiClient.resolveBongoStreamUrl(videoUrl)
-            }
-            if (resolved.isNotBlank() && resolved != playableUrl) {
-                playableUrl = resolved
+            try {
+                withContext(Dispatchers.IO) {
+                    ApiClient.ensureHamyraToken()
+                }
+                val resolved = withContext(Dispatchers.IO) {
+                    ApiClient.resolveBongoStreamUrl(videoUrl)
+                }
+                if (resolved.isNotBlank() && resolved != playableUrl) {
+                    playableUrl = resolved
+                }
+            } catch (e: Exception) {
+                Log.e("VideoPlayerView", "Stream resolution error", e)
             }
         }
     }
@@ -160,9 +167,9 @@ fun VideoPlayerView(
         }
     }
 
-    // Proactive background duration retriever for MKV/MP4 network files
+    // Proactive background duration retriever for MKV/MP4 network files (Skip HLS streams)
     LaunchedEffect(playableUrl) {
-        if (playableUrl.startsWith("http")) {
+        if (playableUrl.startsWith("http") && !playableUrl.contains(".m3u8", ignoreCase = true) && !playableUrl.contains("/hls", ignoreCase = true) && !playableUrl.contains(".m3u", ignoreCase = true)) {
             withContext(Dispatchers.IO) {
                 try {
                     val retriever = android.media.MediaMetadataRetriever()
@@ -215,9 +222,13 @@ fun VideoPlayerView(
             "Accept" to "*/*",
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
         )
-        if (host.contains("hamyra")) {
+        if (host.contains("hamyra") || host.contains("talkoraai") || host.contains("workers.dev")) {
             dynamicHeaders["Origin"] = "https://www.hamyra.xyz"
             dynamicHeaders["Referer"] = "https://www.hamyra.xyz/"
+            val token = ApiClient.getCachedHamyraToken()
+            if (!token.isNullOrEmpty() && (host.contains("hamyra") || host.contains("workers.dev"))) {
+                dynamicHeaders["Authorization"] = "Bearer $token"
+            }
         } else if (host.contains("ctghall")) {
             dynamicHeaders["Referer"] = "https://www.ctghall.com/"
         }
@@ -278,7 +289,7 @@ fun VideoPlayerView(
                         mediaItemBuilder.setMimeType(MimeTypes.APPLICATION_M3U8)
                     } else if (playableUrl.contains(".mkv", ignoreCase = true) || playableUrl.contains("matroska", ignoreCase = true)) {
                         mediaItemBuilder.setMimeType(MimeTypes.VIDEO_MATROSKA)
-                    } else if (playableUrl.contains(".mp4", ignoreCase = true)) {
+                    } else if (playableUrl.contains(".mp4", ignoreCase = true) || playableUrl.contains("stream-proxy", ignoreCase = true) || playableUrl.contains("fsldownload", ignoreCase = true)) {
                         mediaItemBuilder.setMimeType(MimeTypes.VIDEO_MP4)
                     }
 

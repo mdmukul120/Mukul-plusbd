@@ -113,11 +113,13 @@ fun MovieDetailScreen(
                 val streamUrl = movie?.getFullStreamUrl()
                 if (!streamUrl.isNullOrEmpty()) {
                     if (streamUrl.contains("bongo/hls") || (streamUrl.contains("hamyra-api") && streamUrl.contains("id="))) {
+                        ApiClient.ensureHamyraToken()
                         val resolved = ApiClient.resolveBongoStreamUrl(streamUrl)
                         activeStreamUrl = resolved
                     } else {
                         activeStreamUrl = streamUrl
                     }
+                    isPlayingInApp = true
                 }
 
                 // Auto-detect Bongo series episodes
@@ -136,8 +138,10 @@ fun MovieDetailScreen(
                     if (show != null) {
                         bongoShow = show
                         if (activeStreamUrl == null && show.items.isNotEmpty()) {
-                            activeStreamUrl = ApiClient.resolveBongoStreamUrl(show.items.first().id)
+                            ApiClient.ensureHamyraToken()
+                            activeStreamUrl = ApiClient.resolveBongoStreamUrl(show.items.first().hlsUrl)
                             activeEpisodeLabel = show.items.first().title
+                            isPlayingInApp = true
                         }
                     }
                 }
