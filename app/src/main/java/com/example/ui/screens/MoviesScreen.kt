@@ -73,6 +73,7 @@ fun MoviesScreen(
     onSelectMovie: (Long) -> Unit = {},
     initialTab: MoviesMainTab = MoviesMainTab.MUKUL_OTT,
     initialSlug: String? = null,
+    onTabChanged: ((MoviesMainTab) -> Unit)? = null,
     onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -1027,7 +1028,10 @@ fun MoviesScreen(
                 MoviesMainTab.values().forEach { tab ->
                     val isSelected = selectedMainTab == tab
                     Surface(
-                        onClick = { selectedMainTab = tab },
+                        onClick = {
+                            selectedMainTab = tab
+                            onTabChanged?.invoke(tab)
+                        },
                         shape = RoundedCornerShape(10.dp),
                         color = if (isSelected) BrandRed else CinemaSurfaceVariant,
                         border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) BrandRed else CinemaBorder),

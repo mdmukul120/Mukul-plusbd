@@ -156,6 +156,12 @@ fun HomeScreen(
                     onClick = { onNavigateToMovies(MoviesMainTab.MUKUL_OTT) }
                 )
                 HomeQuickPill(
+                    icon = Icons.Default.Subscriptions,
+                    title = "বাংলা ওটিটি",
+                    color = Color(0xFFE50914),
+                    onClick = onNavigateToBanglaOtt
+                )
+                HomeQuickPill(
                     icon = Icons.Default.PlayCircle,
                     title = "বঙ্গ ওটিটি",
                     color = Color(0xFFE50914),

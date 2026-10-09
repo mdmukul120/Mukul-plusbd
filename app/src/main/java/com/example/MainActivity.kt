@@ -198,7 +198,7 @@ fun MukulPlusApp() {
     var isAppStarting by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(1600)
+        kotlinx.coroutines.delay(400)
         isAppStarting = false
     }
 
@@ -207,19 +207,11 @@ fun MukulPlusApp() {
         return
     }
 
-    // -----------------------------------------------------------
-    // FORCED LOGIN GATEWAY:
-    // মুভির পেজে ঢুকতেই প্রথমে লগইন অপশন লাগবে (হুবহু ছবির মতো)
-    // লগইন বাদে অ্যাপ্লিকেশনে ঢোকা যাবে না।
-    // -----------------------------------------------------------
-    if (currentUser == null) {
-        AuthScreen(
-            authRepository = authRepository,
-            onAuthSuccess = {
-                // currentUser will automatically update via state flow
-            }
-        )
-        return
+    // Auto-login as VIP Guest if needed so app and emulator preview immediately open to Home
+    LaunchedEffect(currentUser) {
+        if (currentUser == null) {
+            authRepository.continueAsGuest()
+        }
     }
 
     // Handle Android system back button
@@ -680,63 +672,244 @@ fun MukulPlusApp() {
                             tonalElevation = 6.dp,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            val bottomBarTabs = listOf(
-                                ScreenTab.HOME,
-                                ScreenTab.MOVIES,
-                                ScreenTab.LIVE_TV,
-                                ScreenTab.SPORTS,
-                                ScreenTab.MUSIC
-                            )
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .navigationBarsPadding()
-                                    .height(54.dp)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                bottomBarTabs.forEach { tab ->
-                                    val isSelected = currentTab == tab || (tab == ScreenTab.MOVIES && (currentTab == ScreenTab.MUKUL_OTT || currentTab == ScreenTab.BANGLA_OTT))
+                            if (currentTab == ScreenTab.MOVIES) {
+                                // Specialized Movies & OTT Bottom Navigation Bar
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .navigationBarsPadding()
+                                        .height(54.dp)
+                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    // 1. Home Return
                                     Column(
                                         modifier = Modifier
                                             .weight(1f)
                                             .clip(RoundedCornerShape(10.dp))
+                                            .clickable { currentTab = ScreenTab.HOME }
+                                            .padding(horizontal = 2.dp, vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Home,
+                                            contentDescription = "হোম",
+                                            tint = TextMuted,
+                                            modifier = Modifier.size(19.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text("হোম", color = TextMuted, fontSize = 9.sp, maxLines = 1)
+                                    }
+
+                                    // 2. Mukul OTT
+                                    val isMukul = moviesInitialTab == MoviesMainTab.MUKUL_OTT
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1.1f)
+                                            .clip(RoundedCornerShape(10.dp))
                                             .clickable {
-                                                if (tab == ScreenTab.MOVIES) {
-                                                    moviesInitialTab = MoviesMainTab.MUKUL_OTT
-                                                    moviesInitialSlug = null
-                                                }
-                                                currentTab = tab
+                                                moviesInitialTab = MoviesMainTab.MUKUL_OTT
+                                                moviesInitialSlug = null
                                             }
-                                            .padding(horizontal = 4.dp, vertical = 4.dp),
+                                            .padding(horizontal = 2.dp, vertical = 4.dp),
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
                                         Surface(
-                                            color = if (isSelected) BrandRed.copy(alpha = 0.20f) else Color.Transparent,
+                                            color = if (isMukul) BrandRed.copy(alpha = 0.20f) else Color.Transparent,
                                             shape = RoundedCornerShape(10.dp)
                                         ) {
-                                            Box(
-                                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
+                                            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
                                                 Icon(
-                                                    imageVector = tab.icon,
-                                                    contentDescription = tab.title,
-                                                    tint = if (isSelected) BrandRedLight else TextMuted,
+                                                    imageVector = Icons.Default.VideoLibrary,
+                                                    contentDescription = "মুকুল ওটিটি",
+                                                    tint = if (isMukul) BrandRedLight else TextMuted,
                                                     modifier = Modifier.size(19.dp)
                                                 )
                                             }
                                         }
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = tab.title,
-                                            color = if (isSelected) BrandRedLight else TextMuted,
-                                            fontSize = 9.5.sp,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            text = "মুকুল ওটিটি",
+                                            color = if (isMukul) BrandRedLight else TextMuted,
+                                            fontSize = 9.sp,
+                                            fontWeight = if (isMukul) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1
                                         )
+                                    }
+
+                                    // 3. Bangla OTT
+                                    val isBangla = moviesInitialTab == MoviesMainTab.BANGLA_OTT
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1.1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                moviesInitialTab = MoviesMainTab.BANGLA_OTT
+                                                moviesInitialSlug = null
+                                            }
+                                            .padding(horizontal = 2.dp, vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Surface(
+                                            color = if (isBangla) BrandRed.copy(alpha = 0.20f) else Color.Transparent,
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Subscriptions,
+                                                    contentDescription = "বাংলা ওটিটি",
+                                                    tint = if (isBangla) BrandRedLight else TextMuted,
+                                                    modifier = Modifier.size(19.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "বাংলা ওটিটি",
+                                            color = if (isBangla) BrandRedLight else TextMuted,
+                                            fontSize = 9.sp,
+                                            fontWeight = if (isBangla) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1
+                                        )
+                                    }
+
+                                    // 4. Bongo OTT
+                                    val isBongo = moviesInitialTab == MoviesMainTab.BONGO_OTT
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1.1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                moviesInitialTab = MoviesMainTab.BONGO_OTT
+                                                moviesInitialSlug = null
+                                            }
+                                            .padding(horizontal = 2.dp, vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Surface(
+                                            color = if (isBongo) BrandRed.copy(alpha = 0.20f) else Color.Transparent,
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
+                                                Icon(
+                                                    imageVector = Icons.Default.PlayCircle,
+                                                    contentDescription = "বঙ্গ ওটিটি",
+                                                    tint = if (isBongo) BrandRedLight else TextMuted,
+                                                    modifier = Modifier.size(19.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "বঙ্গ ওটিটি",
+                                            color = if (isBongo) BrandRedLight else TextMuted,
+                                            fontSize = 9.sp,
+                                            fontWeight = if (isBongo) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1
+                                        )
+                                    }
+
+                                    // 5. All Movies
+                                    val isAll = moviesInitialTab == MoviesMainTab.ALL_MOVIES
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1.1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                moviesInitialTab = MoviesMainTab.ALL_MOVIES
+                                                moviesInitialSlug = null
+                                            }
+                                            .padding(horizontal = 2.dp, vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Surface(
+                                            color = if (isAll) BrandRed.copy(alpha = 0.20f) else Color.Transparent,
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Box(modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Movie,
+                                                    contentDescription = "সকল সিনেমা",
+                                                    tint = if (isAll) BrandRedLight else TextMuted,
+                                                    modifier = Modifier.size(19.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = "সকল সিনেমা",
+                                            color = if (isAll) BrandRedLight else TextMuted,
+                                            fontSize = 9.sp,
+                                            fontWeight = if (isAll) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            } else {
+                                // Main Root Bottom Navigation
+                                val bottomBarTabs = listOf(
+                                    ScreenTab.HOME,
+                                    ScreenTab.MOVIES,
+                                    ScreenTab.LIVE_TV,
+                                    ScreenTab.SPORTS,
+                                    ScreenTab.MUSIC
+                                )
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .navigationBarsPadding()
+                                        .height(54.dp)
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    bottomBarTabs.forEach { tab ->
+                                        val isSelected = currentTab == tab
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .clickable {
+                                                    if (tab == ScreenTab.MOVIES) {
+                                                        moviesInitialTab = MoviesMainTab.MUKUL_OTT
+                                                        moviesInitialSlug = null
+                                                    }
+                                                    currentTab = tab
+                                                }
+                                                .padding(horizontal = 4.dp, vertical = 4.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.Center
+                                        ) {
+                                            Surface(
+                                                color = if (isSelected) BrandRed.copy(alpha = 0.20f) else Color.Transparent,
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = tab.icon,
+                                                        contentDescription = tab.title,
+                                                        tint = if (isSelected) BrandRedLight else TextMuted,
+                                                        modifier = Modifier.size(19.dp)
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = tab.title,
+                                                color = if (isSelected) BrandRedLight else TextMuted,
+                                                fontSize = 9.5.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -802,6 +975,7 @@ fun MukulPlusApp() {
                             onSelectMovie = { id: Long -> selectedMovieId = id },
                             initialTab = moviesInitialTab,
                             initialSlug = moviesInitialSlug,
+                            onTabChanged = { tab -> moviesInitialTab = tab },
                             onBack = { currentTab = ScreenTab.HOME }
                         )
                     }

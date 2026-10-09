@@ -58,21 +58,22 @@ class AuthRepository(private val context: Context) {
             val isGuest = prefs.getBoolean("is_guest", false)
             val isVerified = prefs.getBoolean("is_verified", false)
 
-            if (isGuest) {
-                _currentUser.value = UserProfile(
-                    uid = "guest_user",
-                    email = "guest@mukulplus.ott",
-                    displayName = "Guest VIP",
-                    isGuest = true,
-                    isEmailVerified = true
-                )
-            } else if (!savedEmail.isNullOrEmpty() && !savedUid.isNullOrEmpty()) {
+            if (!savedEmail.isNullOrEmpty() && !savedUid.isNullOrEmpty()) {
                 _currentUser.value = UserProfile(
                     uid = savedUid,
                     email = savedEmail,
                     displayName = savedName ?: savedEmail.substringBefore("@"),
                     isGuest = false,
                     isEmailVerified = isVerified
+                )
+            } else {
+                // Default directly to Guest VIP profile so all features & preview immediately work
+                _currentUser.value = UserProfile(
+                    uid = "guest_vip",
+                    email = "guest@mukulplus.ott",
+                    displayName = "Guest VIP",
+                    isGuest = true,
+                    isEmailVerified = true
                 )
             }
         }
