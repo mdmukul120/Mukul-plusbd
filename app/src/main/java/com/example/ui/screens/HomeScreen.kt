@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.api.ApiClient
+import com.example.data.extension.ExtensionManager
 import com.example.data.model.*
 import com.example.data.repository.MediaRepository
 import com.example.data.repository.MukulOttRepository
@@ -54,10 +55,14 @@ fun HomeScreen(
     onNavigateToSports: () -> Unit = {},
     onSelectMukulMovie: (String) -> Unit = {},
     onOpenPluginManager: (() -> Unit)? = null,
+    onOpenPluginHub: ((InstalledPlugin) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
+
+    val extensionManager = remember { ExtensionManager.getInstance(context) }
+    val installedPlugins by extensionManager.installedPlugins.collectAsState()
 
     val cachedFeed by mediaRepository.cachedHomeFeed.collectAsState()
 
@@ -199,6 +204,107 @@ fun HomeScreen(
                 )
             }
             Spacer(modifier = Modifier.height(14.dp))
+        }
+
+        // ----------------------------------------------------
+        // CLOUDSTREAM INSTALLED EXTENSIONS FEED (কন্টেন্ট হাব)
+        // ----------------------------------------------------
+        if (installedPlugins.isNotEmpty()) {
+            item {
+                SectionHeader(
+                    title = "🚀 ক্লাউডস্ট্রিম এক্সটেনশন ও প্রোভাইডার",
+                    subtitle = "Classes.dex কোড সক্রিয় • কন্টেন্ট ব্রাউজ ও ফুল এইচডি প্লে",
+                    onSeeAllClick = { onOpenPluginManager?.invoke() }
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(installedPlugins) { plugin ->
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (plugin.isEnabled) BrandRed.copy(alpha = 0.5f) else CinemaBorder),
+                            modifier = Modifier
+                                .width(160.dp)
+                                .clickable { onOpenPluginHub?.invoke(plugin) }
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (!plugin.iconUrl.isNullOrEmpty()) {
+                                        AsyncImage(
+                                            model = plugin.iconUrl,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(BrandRed.copy(alpha = 0.2f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Extension, contentDescription = null, tint = BrandRed, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = plugin.name,
+                                            color = TextPrimary,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Surface(
+                                            color = Color(0xFF00E676).copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "Dex Active ✓",
+                                                color = Color(0xFF00E676),
+                                                fontSize = 8.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = plugin.description ?: plugin.tvTypes.joinToString(" • ").let { if (it.isEmpty()) "কন্টেন্ট প্রোভাইডার" else it },
+                                    color = TextMuted,
+                                    fontSize = 10.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Surface(
+                                    color = BrandRed,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(Icons.Default.Launch, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("কন্টেন্ট দেখুন", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(14.dp))
+            }
         }
 
         // ----------------------------------------------------

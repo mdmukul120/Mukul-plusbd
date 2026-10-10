@@ -50,7 +50,8 @@ import java.util.*
 fun PluginManagerDialog(
     isOpen: Boolean,
     onDismiss: () -> Unit,
-    onPlayStream: ((streamUrl: String, title: String) -> Unit)? = null
+    onPlayStream: ((streamUrl: String, title: String) -> Unit)? = null,
+    onOpenPluginHub: ((InstalledPlugin) -> Unit)? = null
 ) {
     if (!isOpen) return
 
@@ -67,6 +68,7 @@ fun PluginManagerDialog(
     var isInstalling by remember { mutableStateOf(false) }
     var installProgress by remember { mutableFloatStateOf(0f) }
     var installStatusText by remember { mutableStateOf("") }
+    var newlyInstalledPlugin by remember { mutableStateOf<InstalledPlugin?>(null) }
 
     // Selected plugin to inspect files or streams
     var inspectingPlugin by remember { mutableStateOf<InstalledPlugin?>(null) }
@@ -108,7 +110,9 @@ fun PluginManagerDialog(
 
             isInstalling = false
             if (res.isSuccess) {
-                Toast.makeText(context, "${res.getOrNull()?.name} সফলভাবে ইন্সটল হয়েছে!", Toast.LENGTH_LONG).show()
+                val installed = res.getOrNull()
+                newlyInstalledPlugin = installed
+                Toast.makeText(context, "${installed?.name} সফলভাবে ইন্সটল হয়েছে!", Toast.LENGTH_SHORT).show()
                 selectedTab = 1 // Switch to installed tab
             } else {
                 Toast.makeText(context, "ইন্সটলেশন ব্যর্থ: ${res.exceptionOrNull()?.message}", Toast.LENGTH_LONG).show()
@@ -295,6 +299,10 @@ fun PluginManagerDialog(
                                 coroutineScope.launch { extensionManager.togglePluginEnabled(name, enabled) }
                             },
                             onInspect = { inspectingPlugin = it },
+                            onOpenHub = { plugin ->
+                                onDismiss()
+                                onOpenPluginHub?.invoke(plugin)
+                            },
                             onViewStreams = { plugin ->
                                 viewingStreamsPlugin = plugin
                                 coroutineScope.launch {
@@ -315,6 +323,59 @@ fun PluginManagerDialog(
                 }
             }
         }
+    }
+
+    // Newly Installed Plugin Dialog
+    if (newlyInstalledPlugin != null) {
+        val plugin = newlyInstalledPlugin!!
+        AlertDialog(
+            onDismissRequest = { newlyInstalledPlugin = null },
+            containerColor = CinemaSurface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF00E676), modifier = Modifier.size(22.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("ইন্সটলেশন সফল হয়েছে!", color = TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "'${plugin.name}' সফলভাবে অ্যাপের স্টোরেজে ইন্সটল হয়েছে। classes.dex এবং প্রোভাইডার আর্কিটেকচার সক্রিয় করা হয়েছে।",
+                        color = TextSecondary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "আপনি কি ক্লাউডস্ট্রিম কন্টেন্ট হাবে গিয়ে লাইভ স্পোর্টস, মুভি ও চ্যানেলগুলো ব্রাউজ করতে চান?",
+                        color = TextPrimary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val p = plugin
+                        newlyInstalledPlugin = null
+                        onDismiss()
+                        onOpenPluginHub?.invoke(p)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("🚀 কন্টেন্ট হাব ওপেন করুন", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { newlyInstalledPlugin = null }) {
+                    Text("পরে দেখব", color = TextMuted, fontSize = 12.sp)
+                }
+            }
+        )
     }
 
     // Inspect Plugin Details Dialog
@@ -909,6 +970,7 @@ private fun InstalledPluginsContent(
     installedPlugins: List<InstalledPlugin>,
     onToggleEnabled: (name: String, enabled: Boolean) -> Unit,
     onInspect: (InstalledPlugin) -> Unit,
+    onOpenHub: (InstalledPlugin) -> Unit,
     onViewStreams: (InstalledPlugin) -> Unit,
     onUninstall: (name: String) -> Unit,
     onGoToAddTab: () -> Unit
@@ -964,6 +1026,7 @@ private fun InstalledPluginsContent(
                     plugin = plugin,
                     onToggleEnabled = { onToggleEnabled(plugin.name, it) },
                     onInspect = { onInspect(plugin) },
+                    onOpenHub = { onOpenHub(plugin) },
                     onViewStreams = { onViewStreams(plugin) },
                     onUninstall = { onUninstall(plugin.name) }
                 )
@@ -977,6 +1040,7 @@ private fun InstalledPluginCard(
     plugin: InstalledPlugin,
     onToggleEnabled: (Boolean) -> Unit,
     onInspect: () -> Unit,
+    onOpenHub: () -> Unit,
     onViewStreams: () -> Unit,
     onUninstall: () -> Unit
 ) {
@@ -986,7 +1050,9 @@ private fun InstalledPluginCard(
         color = CinemaSurfaceVariant,
         shape = RoundedCornerShape(12.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onOpenHub() }
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(
@@ -1073,20 +1139,17 @@ private fun InstalledPluginCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // View streams button
-                FilledTonalButton(
-                    onClick = onViewStreams,
+                // Open Provider Content Hub button (Primary)
+                Button(
+                    onClick = onOpenHub,
                     shape = RoundedCornerShape(8.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier.height(32.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = BrandRed.copy(alpha = 0.15f),
-                        contentColor = BrandRed
-                    )
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandRed)
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Launch, contentDescription = null, modifier = Modifier.size(13.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("চ্যানেল/স্ট্রিম", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Text("কন্টেন্ট হাব", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
                 // Inspect details
@@ -1098,9 +1161,9 @@ private fun InstalledPluginCard(
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary),
                     border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
                 ) {
-                    Icon(Icons.Default.Description, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("ফাইল তথ্য", fontSize = 11.sp)
+                    Icon(Icons.Default.Code, contentDescription = null, modifier = Modifier.size(13.dp))
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text("ডেক্স বিশ্লেষণ", fontSize = 10.5.sp)
                 }
 
                 // Delete / Uninstall

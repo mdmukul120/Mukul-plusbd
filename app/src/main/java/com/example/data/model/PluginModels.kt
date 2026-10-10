@@ -70,3 +70,40 @@ data class PluginChannelItem(
     val description: String? = null,
     val providerName: String
 )
+
+data class ProviderStreamServer(
+    val serverName: String,
+    val streamUrl: String,
+    val quality: String = "1080p",
+    val headers: Map<String, String> = emptyMap()
+)
+
+data class ProviderMediaItem(
+    val id: String,
+    val title: String,
+    val url: String = "",
+    val posterUrl: String? = null,
+    val category: String = "সাধারণ",
+    val type: String = "Sports",
+    val description: String? = null,
+    val status: String? = null,
+    val providerName: String = "",
+    val streamServers: List<ProviderStreamServer> = emptyList()
+)
+
+data class ProviderSection(
+    val title: String,
+    val subtitle: String? = null,
+    val tag: String = "ALL",
+    val items: List<ProviderMediaItem> = emptyList()
+)
+
+data class DexAnalysisReport(
+    val loadedSuccessfully: Boolean,
+    val className: String,
+    val methodsFound: List<String> = emptyList(),
+    val mainUrl: String? = null,
+    val supportedTypes: List<String> = emptyList(),
+    val rawBytecodeSize: Long = 0L,
+    val summary: String = ""
+)

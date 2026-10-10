@@ -39,6 +39,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.ExtractorPost
+import com.example.data.model.InstalledPlugin
 import com.example.data.model.TvChannel
 import com.example.data.player.MusicPlayerManager
 import com.example.data.repository.AuthRepository
@@ -126,6 +127,7 @@ fun MukulPlusApp() {
     val extensionManager = remember { ExtensionManager.getInstance(context) }
     val installedPluginsList by extensionManager.installedPlugins.collectAsState()
     var showPluginManagerDialog by remember { mutableStateOf(false) }
+    var activePluginForHub by remember { mutableStateOf<InstalledPlugin?>(null) }
 
     // In-App GitHub Releases Update State
     var activeUpdateInfo by remember { mutableStateOf<AppUpdateInfo?>(null) }
@@ -191,7 +193,11 @@ fun MukulPlusApp() {
         }
     }
 
-    BackHandler(enabled = currentTab != ScreenTab.HOME) {
+    BackHandler(enabled = activePluginForHub != null) {
+        activePluginForHub = null
+    }
+
+    BackHandler(enabled = activePluginForHub == null && currentTab != ScreenTab.HOME) {
         currentTab = ScreenTab.HOME
     }
 
@@ -578,7 +584,7 @@ fun MukulPlusApp() {
         Scaffold(
             containerColor = CinemaBackground,
             topBar = {
-                if (!isPlayerFullScreen && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER && currentTab != ScreenTab.BANGLA_OTT && currentTab != ScreenTab.SPORTS) {
+                if (!isPlayerFullScreen && activePluginForHub == null && currentTab != ScreenTab.EXTRACTOR && currentTab != ScreenTab.YOUTUBE && currentTab != ScreenTab.WEATHER && currentTab != ScreenTab.BANGLA_OTT && currentTab != ScreenTab.SPORTS) {
                     Surface(
                         color = CinemaSurface,
                         tonalElevation = 3.dp,
@@ -664,7 +670,7 @@ fun MukulPlusApp() {
                 }
             },
             bottomBar = {
-                if (!isPlayerFullScreen) {
+                if (!isPlayerFullScreen && activePluginForHub == null) {
                     Column {
                         MiniMusicPlayer()
                         Surface(
@@ -918,7 +924,7 @@ fun MukulPlusApp() {
                 }
             }
         ) { innerPadding ->
-            val contentModifier = if (isPlayerFullScreen) {
+            val contentModifier = if (isPlayerFullScreen || activePluginForHub != null) {
                 Modifier.fillMaxSize()
             } else {
                 Modifier
@@ -928,39 +934,57 @@ fun MukulPlusApp() {
             Box(
                 modifier = contentModifier
             ) {
-                when (currentTab) {
-                    ScreenTab.HOME -> {
-                        HomeScreen(
-                            mediaRepository = mediaRepository,
-                            onSelectMovie = { id -> selectedMovieId = id },
-                            onSelectPost = { post -> selectedExtractorPost = post },
-                            onSelectChannel = { channel ->
-                                selectedTvChannel = channel
-                                currentTab = ScreenTab.LIVE_TV
-                            },
-                            onNavigateToMovies = { targetTab ->
-                                moviesInitialTab = targetTab ?: MoviesMainTab.MUKUL_OTT
-                                moviesInitialSlug = null
-                                currentTab = ScreenTab.MOVIES
-                            },
-                            onNavigateToLiveTv = { currentTab = ScreenTab.LIVE_TV },
-                            onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR },
-                            onNavigateToMusic = { currentTab = ScreenTab.MUSIC },
-                            onNavigateToWeather = { currentTab = ScreenTab.WEATHER },
-                            onNavigateToBanglaOtt = {
-                                moviesInitialTab = MoviesMainTab.BANGLA_OTT
-                                moviesInitialSlug = null
-                                currentTab = ScreenTab.MOVIES
-                            },
-                            onNavigateToSports = { currentTab = ScreenTab.SPORTS },
-                            onSelectMukulMovie = { slug ->
-                                moviesInitialTab = MoviesMainTab.MUKUL_OTT
-                                moviesInitialSlug = slug
-                                currentTab = ScreenTab.MOVIES
-                            },
-                            onOpenPluginManager = { showPluginManagerDialog = true }
-                        )
-                    }
+                if (activePluginForHub != null) {
+                    PluginContentHubScreen(
+                        plugin = activePluginForHub!!,
+                        onBack = { activePluginForHub = null },
+                        onPlayStream = { streamUrl, title, category ->
+                            selectedTvChannel = TvChannel(
+                                id = "plugin_${System.currentTimeMillis()}",
+                                name = title,
+                                logo = activePluginForHub?.iconUrl,
+                                groupTitle = activePluginForHub?.name ?: "সিএস৩ এক্সটেনশন",
+                                streamUrl = streamUrl
+                            )
+                            currentTab = ScreenTab.LIVE_TV
+                            activePluginForHub = null
+                        }
+                    )
+                } else {
+                    when (currentTab) {
+                        ScreenTab.HOME -> {
+                            HomeScreen(
+                                mediaRepository = mediaRepository,
+                                onSelectMovie = { id -> selectedMovieId = id },
+                                onSelectPost = { post -> selectedExtractorPost = post },
+                                onSelectChannel = { channel ->
+                                    selectedTvChannel = channel
+                                    currentTab = ScreenTab.LIVE_TV
+                                },
+                                onNavigateToMovies = { targetTab ->
+                                    moviesInitialTab = targetTab ?: MoviesMainTab.MUKUL_OTT
+                                    moviesInitialSlug = null
+                                    currentTab = ScreenTab.MOVIES
+                                },
+                                onNavigateToLiveTv = { currentTab = ScreenTab.LIVE_TV },
+                                onNavigateToExtractor = { currentTab = ScreenTab.EXTRACTOR },
+                                onNavigateToMusic = { currentTab = ScreenTab.MUSIC },
+                                onNavigateToWeather = { currentTab = ScreenTab.WEATHER },
+                                onNavigateToBanglaOtt = {
+                                    moviesInitialTab = MoviesMainTab.BANGLA_OTT
+                                    moviesInitialSlug = null
+                                    currentTab = ScreenTab.MOVIES
+                                },
+                                onNavigateToSports = { currentTab = ScreenTab.SPORTS },
+                                onSelectMukulMovie = { slug ->
+                                    moviesInitialTab = MoviesMainTab.MUKUL_OTT
+                                    moviesInitialSlug = slug
+                                    currentTab = ScreenTab.MOVIES
+                                },
+                                onOpenPluginManager = { showPluginManagerDialog = true },
+                                onOpenPluginHub = { plugin -> activePluginForHub = plugin }
+                            )
+                        }
                     ScreenTab.BANGLA_OTT -> {
                         MoviesScreen(
                             mediaRepository = mediaRepository,
@@ -1044,6 +1068,7 @@ fun MukulPlusApp() {
                     }
                 }
             }
+            }
         }
     }
 
@@ -1078,6 +1103,9 @@ fun MukulPlusApp() {
     PluginManagerDialog(
         isOpen = showPluginManagerDialog,
         onDismiss = { showPluginManagerDialog = false },
+        onOpenPluginHub = { plugin ->
+            activePluginForHub = plugin
+        },
         onPlayStream = { streamUrl, title ->
             selectedTvChannel = TvChannel(
                 id = "plugin_${System.currentTimeMillis()}",
