@@ -17,8 +17,8 @@ android {
     applicationId = "com.aistudio.mukulplus.otthub"
     minSdk = 24
     targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    versionCode = 34
+    versionName = "1.0.34"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
   }

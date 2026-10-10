@@ -17,7 +17,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -30,50 +29,35 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.example.data.api.ApiClient
-import com.example.data.extension.ExtensionManager
 import com.example.data.model.*
 import com.example.data.repository.MediaRepository
 import com.example.data.repository.MukulOttRepository
-import com.example.data.util.LanguageManager
 import com.example.ui.components.HeroSlider
-import com.example.ui.components.MoviePosterCard
 import com.example.ui.theme.*
-import kotlinx.coroutines.launch
 
 @Composable
 fun HomeScreen(
     mediaRepository: MediaRepository,
     onSelectMovie: (Long) -> Unit,
-    onSelectPost: (ExtractorPost) -> Unit,
     onSelectChannel: (TvChannel) -> Unit,
     onNavigateToMovies: (MoviesMainTab?) -> Unit,
     onNavigateToLiveTv: () -> Unit,
-    onNavigateToExtractor: () -> Unit,
+    onNavigateToDownloads: () -> Unit,
     onNavigateToMusic: () -> Unit = {},
     onNavigateToWeather: () -> Unit = {},
-    onNavigateToBanglaOtt: () -> Unit = {},
-    onNavigateToSports: () -> Unit = {},
+    onNavigateToYoutube: () -> Unit = {},
     onSelectMukulMovie: (String) -> Unit = {},
-    onOpenPluginManager: (() -> Unit)? = null,
-    onOpenPluginHub: ((InstalledPlugin) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-
-    val extensionManager = remember { ExtensionManager.getInstance(context) }
-    val installedPlugins by extensionManager.installedPlugins.collectAsState()
-
     val cachedFeed by mediaRepository.cachedHomeFeed.collectAsState()
 
     var trendingMovies by remember { mutableStateOf(cachedFeed?.trendingMovies ?: emptyList()) }
     var bongoVideos by remember { mutableStateOf(cachedFeed?.bongoVideos ?: emptyList()) }
     var liveChannels by remember { mutableStateOf(cachedFeed?.liveChannels ?: emptyList()) }
     var mukulLatestMovies by remember { mutableStateOf<List<MukulOttMovieItem>>(MukulOttRepository.cachedMovies) }
-    var providerPosts by remember { mutableStateOf<List<ExtractorPost>>(emptyList()) }
     var isLoading by remember { mutableStateOf(cachedFeed == null || !cachedFeed!!.isLoaded) }
 
-    // Fetch real data without any demo content
     LaunchedEffect(Unit) {
         if (cachedFeed != null && cachedFeed!!.isLoaded && trendingMovies.isNotEmpty() && mukulLatestMovies.isNotEmpty()) {
             isLoading = false
@@ -100,9 +84,6 @@ fun HomeScreen(
                 MukulOttRepository.isLoaded = true
             }
 
-            // 5. Fast extractor posts for downloads section
-            providerPosts = ApiClient.fetchExtractorPosts("moviesmod", page = 1)
-
             // Cache in media repository
             mediaRepository.updateCachedHomeFeed(
                 com.example.data.repository.HomeFeedData(
@@ -127,10 +108,11 @@ fun HomeScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(CinemaBackground)
+            .background(CinemaBackground),
+        contentPadding = PaddingValues(bottom = 72.dp)
     ) {
         // ----------------------------------------------------
-        // 1. HERO IMAGE SLIDER (সবার উপরে প্রিমিয়াম ব্যানার)
+        // 1. ইমেজ স্লাইডার (Hero Image Slider)
         // ----------------------------------------------------
         item {
             HeroSlider(
@@ -142,180 +124,93 @@ fun HomeScreen(
         }
 
         // ----------------------------------------------------
-        // 2. QUICK SHORTCUT PILLS (ক্যাটাগরি বাটন রো)
+        // 2. বাটন যেমন: মুভি, ওয়েদার, মিউজিক, bongo, ইউটিউব, ইত্যাদি
         // ----------------------------------------------------
         item {
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                HomeQuickPill(
-                    icon = Icons.Default.VideoLibrary,
-                    title = "মুকুল ওটিটি",
+                HomeActionShortcutButton(
+                    icon = Icons.Default.Movie,
+                    title = "মুভি",
                     color = BrandRed,
                     onClick = { onNavigateToMovies(MoviesMainTab.MUKUL_OTT) }
                 )
-                HomeQuickPill(
-                    icon = Icons.Default.Subscriptions,
-                    title = "বাংলা ওটিটি",
-                    color = Color(0xFFE50914),
-                    onClick = onNavigateToBanglaOtt
+                HomeActionShortcutButton(
+                    icon = Icons.Default.WbSunny,
+                    title = "ওয়েদার",
+                    color = Color(0xFFFFB020),
+                    onClick = onNavigateToWeather
                 )
-                HomeQuickPill(
-                    icon = Icons.Default.PlayCircle,
-                    title = "বঙ্গ ওটিটি",
+                HomeActionShortcutButton(
+                    icon = Icons.Default.MusicNote,
+                    title = "মিউজিক",
+                    color = Color(0xFF00E676),
+                    onClick = onNavigateToMusic
+                )
+                HomeActionShortcutButton(
+                    icon = Icons.Default.Subscriptions,
+                    title = "Bongo",
                     color = Color(0xFFE50914),
                     onClick = { onNavigateToMovies(MoviesMainTab.BONGO_OTT) }
                 )
-                HomeQuickPill(
+                HomeActionShortcutButton(
+                    icon = Icons.Default.PlayCircle,
+                    title = "ইউটিউব",
+                    color = Color(0xFFFF3333),
+                    onClick = onNavigateToYoutube
+                )
+                HomeActionShortcutButton(
                     icon = Icons.Default.Tv,
-                    title = "লাইভ টিভি",
+                    title = "টিভি",
                     color = CyanAccent,
                     onClick = onNavigateToLiveTv
                 )
-                HomeQuickPill(
-                    icon = Icons.Default.SportsCricket,
-                    title = "স্পোর্টস",
-                    color = Color(0xFF00E676),
-                    onClick = onNavigateToSports
-                )
-                HomeQuickPill(
-                    icon = Icons.Default.MusicNote,
-                    title = "মিউজিক",
-                    color = Color(0xFFFFB020),
-                    onClick = onNavigateToMusic
-                )
-                HomeQuickPill(
+                HomeActionShortcutButton(
                     icon = Icons.Default.CloudDownload,
                     title = "ডাউনলোড",
                     color = Color(0xFF8B5CF6),
-                    onClick = onNavigateToExtractor
-                )
-                HomeQuickPill(
-                    icon = Icons.Default.AddCircleOutline,
-                    title = "প্লাগইন (+)",
-                    color = BrandRed,
-                    onClick = { onOpenPluginManager?.invoke() }
+                    onClick = onNavigateToDownloads
                 )
             }
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
         // ----------------------------------------------------
-        // CLOUDSTREAM INSTALLED EXTENSIONS FEED (কন্টেন্ট হাব)
-        // ----------------------------------------------------
-        if (installedPlugins.isNotEmpty()) {
-            item {
-                SectionHeader(
-                    title = "🚀 ক্লাউডস্ট্রিম এক্সটেনশন ও প্রোভাইডার",
-                    subtitle = "Classes.dex কোড সক্রিয় • কন্টেন্ট ব্রাউজ ও ফুল এইচডি প্লে",
-                    onSeeAllClick = { onOpenPluginManager?.invoke() }
-                )
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(installedPlugins) { plugin ->
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, if (plugin.isEnabled) BrandRed.copy(alpha = 0.5f) else CinemaBorder),
-                            modifier = Modifier
-                                .width(160.dp)
-                                .clickable { onOpenPluginHub?.invoke(plugin) }
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    if (!plugin.iconUrl.isNullOrEmpty()) {
-                                        AsyncImage(
-                                            model = plugin.iconUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(RoundedCornerShape(8.dp)),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    } else {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(36.dp)
-                                                .clip(RoundedCornerShape(8.dp))
-                                                .background(BrandRed.copy(alpha = 0.2f)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(Icons.Default.Extension, contentDescription = null, tint = BrandRed, modifier = Modifier.size(20.dp))
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = plugin.name,
-                                            color = TextPrimary,
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Surface(
-                                            color = Color(0xFF00E676).copy(alpha = 0.15f),
-                                            shape = RoundedCornerShape(4.dp)
-                                        ) {
-                                            Text(
-                                                text = "Dex Active ✓",
-                                                color = Color(0xFF00E676),
-                                                fontSize = 8.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Text(
-                                    text = plugin.description ?: plugin.tvTypes.joinToString(" • ").let { if (it.isEmpty()) "কন্টেন্ট প্রোভাইডার" else it },
-                                    color = TextMuted,
-                                    fontSize = 10.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Surface(
-                                    color = BrandRed,
-                                    shape = RoundedCornerShape(6.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(vertical = 4.dp),
-                                        horizontalArrangement = Arrangement.Center,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.Launch, contentDescription = null, tint = Color.White, modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("কন্টেন্ট দেখুন", color = Color.White, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(14.dp))
-            }
-        }
-
-        // ----------------------------------------------------
-        // 3. BANGLADESHI LIVE TV CHANNELS (সার্কেল লিস্ট)
+        // 3. টিভি চ্যানেল হরিজনটাল স্ক্রল
         // ----------------------------------------------------
         item {
-            SectionHeader(
-                title = "লাইভ টিভি চ্যানেল",
-                subtitle = "বাংলাদেশী ও আন্তর্জাতিক টিভি চ্যানেল",
-                onSeeAllClick = onNavigateToLiveTv
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "টিভি চ্যানেল",
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "বাংলাদেশী ও আন্তর্জাতিক লাইভ টিভি",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                }
+                TextButton(onClick = onNavigateToLiveTv) {
+                    Text("সব দেখুন", color = BrandRed, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = BrandRed, modifier = Modifier.size(16.dp))
+                }
+            }
 
             val displayChannels = remember(liveChannels) {
                 if (liveChannels.isNotEmpty()) {
@@ -328,7 +223,6 @@ fun HomeScreen(
                         it.name.contains("Ekattor", ignoreCase = true) ||
                         it.name.contains("NTV", ignoreCase = true) ||
                         it.name.contains("ATN", ignoreCase = true) ||
-                        it.name.contains("Banglavision", ignoreCase = true) ||
                         it.name.contains("Deepto", ignoreCase = true) ||
                         it.name.contains("T Sports", ignoreCase = true) ||
                         it.name.contains("BTV", ignoreCase = true)
@@ -359,340 +253,191 @@ fun HomeScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(18.dp))
         }
 
         // ----------------------------------------------------
-        // 4. MUKUL OTT - LATEST RELEASES & TRENDING
-        // (আসল মুকুল ওটিটি কার্ড - এক ক্লিকে মুভি পেজে প্লে)
+        // 4. Bongo এর কিছু ভিডিও এবং আরো দেখুন বাটন
         // ----------------------------------------------------
-        if (mukulLatestMovies.isNotEmpty()) {
-            item {
-                SectionHeader(
-                    title = "🌟 মুকুল ওটিটি - লেটেস্ট রিলিজ",
-                    subtitle = "সরাসরি ১০৮০p / ৭২০p ফুল এইচডি স্ট্রিমিং ও ডাউনলোড",
-                    onSeeAllClick = { onNavigateToMovies(MoviesMainTab.MUKUL_OTT) }
-                )
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 14.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(mukulLatestMovies.take(20)) { item ->
-                        Card(
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                            modifier = Modifier
-                                .width(125.dp)
-                                .clickable {
-                                    onSelectMukulMovie(item.slug)
-                                }
-                        ) {
-                            Column {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(175.dp)
-                                        .background(CinemaSurfaceVariant)
-                                ) {
-                                    AsyncImage(
-                                        model = item.poster,
-                                        contentDescription = item.title,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-
-                                    // Play icon overlay
-                                    Surface(
-                                        shape = CircleShape,
-                                        color = BrandRed.copy(alpha = 0.85f),
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .align(Alignment.Center)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = Color.White, modifier = Modifier.size(18.dp))
-                                        }
-                                    }
-
-                                    // Quality badge
-                                    if (item.qualityTag.isNotEmpty()) {
-                                        Surface(
-                                            shape = RoundedCornerShape(bottomEnd = 6.dp),
-                                            color = BrandRed,
-                                            modifier = Modifier.align(Alignment.TopStart)
-                                        ) {
-                                            Text(
-                                                text = item.qualityTag,
-                                                color = Color.White,
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                                            )
-                                        }
-                                    }
-
-                                    // Year
-                                    if (item.year > 0) {
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = Color.Black.copy(alpha = 0.7f),
-                                            modifier = Modifier
-                                                .align(Alignment.BottomEnd)
-                                                .padding(4.dp)
-                                        ) {
-                                            Text(
-                                                text = "${item.year}",
-                                                color = Color(0xFFFFB020),
-                                                fontSize = 9.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                Text(
-                                    text = item.title,
-                                    color = TextPrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-                    }
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Bongo ভিডিও ও সিরিজ",
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "ব্যাচেলর পয়েন্ট, সুলতান সালাহউদ্দিন ও ড্রামা",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
                 }
-                Spacer(modifier = Modifier.height(16.dp))
+                FilledTonalButton(
+                    onClick = { onNavigateToMovies(MoviesMainTab.BONGO_OTT) },
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = CinemaSurfaceVariant,
+                        contentColor = BrandRed
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Text("আরো দেখুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(15.dp))
+                }
             }
-        }
 
-        // ----------------------------------------------------
-        // 5. BONGO BD ORIGINALS & WEB SERIES
-        // ----------------------------------------------------
-        if (bongoVideos.isNotEmpty()) {
-            item {
-                SectionHeader(
-                    title = "🎬 বঙ্গ ওটিটি - মেগা সিরিজ ও নাটক",
-                    subtitle = "ব্যাচেলর পয়েন্ট, সুলতান সালাহউদ্দিন ও ড্রামা কালেকশন",
-                    onSeeAllClick = { onNavigateToMovies(MoviesMainTab.BONGO_OTT) }
-                )
+            if (bongoVideos.isEmpty() && isLoading) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = BrandRed, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                }
+            } else {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(bongoVideos.take(20)) { movie ->
-                        MoviePosterCard(
-                            movie = movie,
-                            onClick = { onSelectMovie(movie.id) }
+                        PurePosterCard(
+                            imageUrl = movie.getFullPosterUrl(),
+                            contentDescription = movie.title,
+                            onClick = { onSelectMovie(movie.id) },
+                            width = 115,
+                            height = 165
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(16.dp))
             }
+            Spacer(modifier = Modifier.height(18.dp))
         }
 
         // ----------------------------------------------------
-        // 6. LIVE SPORTS BANNER
+        // 5. mukul-ott API এর থাকা ভিডিও এবং আরো দেখুন বাটন
         // ----------------------------------------------------
         item {
-            Card(
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.35f)),
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 14.dp, vertical = 4.dp)
-                    .clickable { onNavigateToSports() }
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                Column {
+                    Text(
+                        text = "Mukul OTT ভিডিও",
+                        color = TextPrimary,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "সরাসরি ১০৮০p / ৭২০p ফুল এইচডি স্ট্রিমিং",
+                        color = TextMuted,
+                        fontSize = 11.sp
+                    )
+                }
+                FilledTonalButton(
+                    onClick = { onNavigateToMovies(MoviesMainTab.MUKUL_OTT) },
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = CinemaSurfaceVariant,
+                        contentColor = BrandRed
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
                 ) {
-                    Surface(
-                        color = Color(0xFF00E676).copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(10.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.SportsCricket,
-                            contentDescription = null,
-                            tint = Color(0xFF00E676),
-                            modifier = Modifier.padding(10.dp).size(26.dp)
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.size(6.dp).background(Color(0xFF00E676), CircleShape))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "LIVE SPORTS",
-                                color = Color(0xFF00E676),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Black
-                            )
-                        }
-                        Text(
-                            text = "লাইভ ক্রিকেট ও ফুটবল ম্যাচ",
-                            color = TextPrimary,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = "T Sports, Star Sports ও লাইভ স্কোর দেখুন",
-                            color = TextMuted,
-                            fontSize = 11.sp
-                        )
-                    }
-                    Button(
-                        onClick = onNavigateToSports,
-                        colors = ButtonDefaults.buttonColors(containerColor = AuthBrandPrimary),
-                        shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                        modifier = Modifier.height(34.dp)
-                    ) {
-                        Text("দেখুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                    }
+                    Text("আরো দেখুন", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, modifier = Modifier.size(15.dp))
                 }
             }
-            Spacer(modifier = Modifier.height(14.dp))
-        }
 
-        // ----------------------------------------------------
-        // 7. MUKUL MUSIC PROMO
-        // ----------------------------------------------------
-        item {
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 14.dp)
-                    .clickable { onNavigateToMusic() },
-                shape = RoundedCornerShape(16.dp),
-                color = CinemaSurfaceVariant,
-                border = androidx.compose.foundation.BorderStroke(1.dp, BrandRed.copy(alpha = 0.35f))
-            ) {
+            if (mukulLatestMovies.isEmpty() && isLoading) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(
-                            Brush.horizontalGradient(
-                                colors = listOf(BrandRed.copy(alpha = 0.3f), CinemaSurface)
-                            )
-                        )
-                        .padding(14.dp)
+                        .height(140.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = BrandRed,
-                            modifier = Modifier.size(46.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.MusicNote, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "মুকুল মিউজিক হাব (Music & Hits)",
-                                color = TextPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = "বাংলা গান, হিন্দি ৯০s ও টপ চার্ট অডিও শুনুন",
-                                color = TextMuted,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = BrandRed, modifier = Modifier.size(22.dp))
-                    }
+                    CircularProgressIndicator(color = BrandRed, strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
                 }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // ----------------------------------------------------
-        // 8. FAST DOWNLOADS / EXTRACTOR SECTION
-        // ----------------------------------------------------
-        if (providerPosts.isNotEmpty()) {
-            item {
-                SectionHeader(
-                    title = "📥 সরাসরি ডাউনলোড হাব",
-                    subtitle = "সিনেমা ও সিরিজের সরাসরি অফলাইন ডাউনলোড",
-                    onSeeAllClick = onNavigateToExtractor
-                )
+            } else {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 14.dp),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(providerPosts.take(10)) { post ->
-                        Card(
-                            modifier = Modifier
-                                .width(125.dp)
-                                .clickable { onSelectPost(post) },
-                            colors = CardDefaults.cardColors(containerColor = CinemaSurface),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            Column {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(160.dp)
-                                        .background(CinemaSurfaceVariant)
-                                ) {
-                                    if (!post.image.isNullOrEmpty()) {
-                                        AsyncImage(
-                                            model = post.image,
-                                            contentDescription = post.title,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                    Surface(
-                                        color = BrandRed,
-                                        shape = RoundedCornerShape(4.dp),
-                                        modifier = Modifier.align(Alignment.TopStart).padding(6.dp)
-                                    ) {
-                                        Text(text = "DL", color = Color.White, fontSize = 9.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
-                                    }
-                                }
-                                Text(
-                                    text = post.title,
-                                    color = TextPrimary,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.padding(6.dp)
-                                )
-                            }
-                        }
+                    items(mukulLatestMovies.take(20)) { item ->
+                        PurePosterCard(
+                            imageUrl = item.poster,
+                            contentDescription = item.title,
+                            onClick = { onSelectMukulMovie(item.slug) },
+                            width = 115,
+                            height = 165
+                        )
                     }
                 }
             }
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(50.dp))
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }
 
-// ==========================================
-// QUICK PILL BUTTON
-// ==========================================
+/**
+ * Pure poster card with zero text overlay on top of the image
+ * Clean rounded poster card designed strictly to requirement:
+ * "মুভি কার্ডের ইমেজে উপর কোন প্রকার লেখা থাকবে না"
+ */
 @Composable
-private fun HomeQuickPill(
+fun PurePosterCard(
+    imageUrl: String,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    width: Int = 115,
+    height: Int = 165
+) {
+    Card(
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = CinemaSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        modifier = modifier
+            .width(width.dp)
+            .height(height.dp)
+            .clickable { onClick() }
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(CinemaSurfaceVariant)
+        ) {
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(imageUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = contentDescription,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+    }
+}
+
+@Composable
+fun HomeActionShortcutButton(
     icon: ImageVector,
     title: String,
     color: Color,
@@ -700,148 +445,76 @@ private fun HomeQuickPill(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         color = CinemaSurfaceVariant,
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.35f))
+        border = androidx.compose.foundation.BorderStroke(1.dp, CinemaBorder)
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(18.dp)
+            )
             Text(
                 text = title,
                 color = TextPrimary,
-                fontSize = 12.sp,
+                fontSize = 12.5.sp,
                 fontWeight = FontWeight.SemiBold
             )
         }
     }
 }
 
-// ==========================================
-// SECTION HEADER
-// ==========================================
 @Composable
-private fun SectionHeader(
-    title: String,
-    subtitle: String,
-    onSeeAllClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, color = TextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text(text = subtitle, color = TextMuted, fontSize = 11.sp)
-        }
-        TextButton(
-            onClick = onSeeAllClick,
-            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-        ) {
-            Text("সব দেখুন", color = BrandRedLight, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = BrandRedLight, modifier = Modifier.size(16.dp))
-        }
-    }
-}
-
-// ==========================================
-// CIRCULAR TV CHANNEL AVATAR
-// ==========================================
-@Composable
-private fun CircularChannelAvatar(
+fun CircularChannelAvatar(
     channel: TvChannel,
     onClick: () -> Unit
 ) {
-    val context = LocalContext.current
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
             .width(72.dp)
-            .clickable(onClick = onClick)
+            .clickable { onClick() }
     ) {
-        Box(
-            modifier = Modifier.size(64.dp),
-            contentAlignment = Alignment.Center
+        Surface(
+            shape = CircleShape,
+            color = CinemaSurfaceVariant,
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, BrandRed.copy(alpha = 0.5f)),
+            modifier = Modifier.size(56.dp)
         ) {
-            // Glowing border
-            Box(
-                modifier = Modifier
-                    .size(64.dp)
-                    .clip(CircleShape)
-                    .background(
-                        Brush.sweepGradient(
-                            listOf(
-                                AuthBrandGradientStart,
-                                AuthBrandPrimary,
-                                Color(0xFFFFB020),
-                                AuthBrandGradientEnd,
-                                AuthBrandGradientStart
-                            )
-                        )
-                    )
-            )
-
-            // Inner image
-            Box(
-                modifier = Modifier
-                    .size(58.dp)
-                    .clip(CircleShape)
-                    .background(CinemaSurface),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(contentAlignment = Alignment.Center) {
                 if (!channel.logo.isNullOrEmpty()) {
                     AsyncImage(
-                        model = ImageRequest.Builder(context)
+                        model = ImageRequest.Builder(LocalContext.current)
                             .data(channel.logo)
                             .crossfade(true)
                             .build(),
                         contentDescription = channel.name,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier
-                            .size(46.dp)
+                            .size(38.dp)
                             .clip(CircleShape)
                     )
                 } else {
-                    Icon(
-                        imageVector = Icons.Default.Tv,
-                        contentDescription = null,
-                        tint = AuthBrandPrimary,
-                        modifier = Modifier.size(24.dp)
+                    Text(
+                        text = channel.name.take(2).uppercase(),
+                        color = TextPrimary,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
-
-            // Red LIVE Dot Badge
-            Surface(
-                color = BrandRed,
-                shape = CircleShape,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .offset(y = 3.dp)
-            ) {
-                Text(
-                    text = "LIVE",
-                    color = Color.White,
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Black,
-                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                )
-            }
         }
-
         Spacer(modifier = Modifier.height(4.dp))
-
         Text(
             text = channel.name,
             color = TextPrimary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontSize = 10.5.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
