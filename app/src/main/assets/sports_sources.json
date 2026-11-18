@@ -1,0 +1,10 @@
+[
+  {
+    "id": "example_placeholder",
+    "name": "আমার স্পোর্টস ফিড (এখানে নিজের URL বসাও)",
+    "kind": "JSON",
+    "url": "",
+    "enabled": false,
+    "notes": "url খালি থাকলে সোর্স লোড হবে না। ফরম্যাট: [{title, teamA, teamB, league, status, startTime, poster, streams:[{label,url,quality}]}]"
+  }
+]

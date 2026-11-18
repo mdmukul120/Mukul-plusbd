@@ -33,6 +33,7 @@ import com.example.data.model.*
 import com.example.data.player.MusicPlayerManager
 import com.example.data.util.VideoPlayerState
 import com.example.data.repository.*
+import com.example.data.repository.SportsHubRepository
 import com.example.data.util.AppLanguage
 import com.example.data.util.LanguageManager
 import com.example.data.util.ThemeManager
@@ -51,6 +52,7 @@ enum class ScreenTab(val title: String, val icon: ImageVector) {
     HOME("হোম", Icons.Default.Home),
     MOVIES("মুভি", Icons.Default.Movie),
     LIVE_TV("টিভি", Icons.Default.Tv),
+    SPORTS("স্পোর্টস", Icons.Default.SportsCricket),
     MUSIC("মিউজিক", Icons.Default.MusicNote),
     YOUTUBE("ইউটিউব", Icons.Default.PlayCircle),
     WEATHER("আবহাওয়া", Icons.Default.WbSunny),
@@ -92,6 +94,7 @@ fun MukulPlusApp() {
     val authRepository = remember { AuthRepository(context) }
     val mediaRepository = remember { MediaRepository(context) }
     val musicRepository = remember { MusicRepository(context) }
+    val sportsHubRepository = remember { SportsHubRepository(context) }
 
     val currentUser by authRepository.currentUser.collectAsState()
     val showFullMusicPlayer by MusicPlayerManager.showFullPlayer.collectAsState()
@@ -190,6 +193,17 @@ fun MukulPlusApp() {
                         selected = currentTab == ScreenTab.LIVE_TV,
                         onClick = {
                             currentTab = ScreenTab.LIVE_TV
+                            coroutineScope.launch { drawerState.close() }
+                        },
+                        colors = drawerItemColors()
+                    )
+
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.SportsCricket, contentDescription = null, tint = if (currentTab == ScreenTab.SPORTS) BrandRed else TextSecondary) },
+                        label = { Text("স্পোর্টস হাব") },
+                        selected = currentTab == ScreenTab.SPORTS,
+                        onClick = {
+                            currentTab = ScreenTab.SPORTS
                             coroutineScope.launch { drawerState.close() }
                         },
                         colors = drawerItemColors()
@@ -421,6 +435,7 @@ fun MukulPlusApp() {
                                 ScreenTab.HOME,
                                 ScreenTab.MOVIES,
                                 ScreenTab.LIVE_TV,
+                                ScreenTab.SPORTS,
                                 ScreenTab.MUSIC,
                                 ScreenTab.EXTRACTOR
                             )
@@ -535,6 +550,12 @@ fun MukulPlusApp() {
                         LiveTvScreen(
                             mediaRepository = mediaRepository,
                             initialChannel = selectedTvChannel,
+                            onBack = { currentTab = ScreenTab.HOME }
+                        )
+                    }
+                    ScreenTab.SPORTS -> {
+                        SportsHubScreen(
+                            repository = sportsHubRepository,
                             onBack = { currentTab = ScreenTab.HOME }
                         )
                     }
